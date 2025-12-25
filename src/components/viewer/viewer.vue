@@ -19,7 +19,6 @@ import initViewer from "./viewer"
 
 const props = defineProps<{
   sceneUrl?: string
-  // s3mScps: []
   afterInitviewer?: () => void
   openingAnimation?: boolean
 }>()
