@@ -3,6 +3,8 @@
 //import { actions, storeDate } from '@/js/store/store'   //局部状态管理
 //import EventManager from '@/js/common/eventManager/EventManager.js'   //事件管理
 import { onBeforeUnmount } from 'vue'
+import { orbit } from '@/components/satellite/orbit'
+import { useViewerStore } from '@/store/viewer'
 //import createTooltip, { tooltip } from '@/js/tool/tooltip2'
 //import { useViewer } from "@/js/store"
 //import MeasureHandler from "../SupermapTools/analysis_3d/measure/measureHandler"
@@ -20,9 +22,8 @@ type Props = Partial<{
 
 async function initViewer(props: Props, callback?: () => void) {
   //初始化viewer
-  if (window.viewer) {
-    window.viewer = null;
-  }
+  const viewerStore = useViewerStore()
+  viewerStore.destroyViewer()
   
   Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2NGRlZWM1Mi1mYmFmLTQwODEtODI2ZS0wNjgxZDdjOGYzOTMiLCJpZCI6ODMzNTgsImlhdCI6MTY0NTUzNjc3Nn0.BVnIvefsZE3yGxBEToV6RsWlLL4nKgMdgG2hsp3JMsY"   // FIXME: Only used for Cesium Ion services.
   //let bingUrl = "http://dev.virtualearth.net"
@@ -89,10 +90,11 @@ async function initViewer(props: Props, callback?: () => void) {
   }
   
   viewer.scene.postProcessStages.fxaa.enabled = true//抗锯齿
+  viewerStore.setViewer(viewer)
+
   // 销毁
   onBeforeUnmount(() => {
-    viewer.destroy();
-    window.viewer = null
+    viewerStore.destroyViewer()
   })
 };
 
