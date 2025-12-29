@@ -1,17 +1,52 @@
 import * as satellite from 'satellite.js'
+import * as Cesium from 'cesium'
 
-export function orbit() {
-  const tle1 = `1 60379U 24140A   25348.91457039  .00000095  00000+0  12833-3 0  9999`
-  const tle2 = `2 60379  88.9761 299.0549 0016230 203.7248 156.3156 13.50978418 67648`
+type SatelliteTLE = {
+    [key: string]: {
+      tle1: string,
+      tle2: string
+    }
+  }
+
+export function constellation(tles: string): SatelliteTLE {
+  const tleLines = tles.split('\n').filter(line => line.trim().length > 0)
+  let index = 0
+  console.log(tleLines)
+  
+  const satellites: SatelliteTLE = {}
+  while (index < tleLines.length) {
+    let satName = tleLines[index]
+    let tle1: string
+    let tle2: string
+    if (satName?.startsWith("1")) { // No satellite name line in this TLE
+      satName = `SAT-${index / 2 + 1}`
+      tle1 = tleLines[index]
+      tle2 = tleLines[index + 1]
+      index = index + 2
+    } else {
+      tle1 = tleLines[index + 1]
+      tle2 = tleLines[index + 2]
+      index = index + 3
+    }
+    satellites[satName] = {
+      tle1,
+      tle2
+    }
+  }
+  return satellites
+}
+
+
+export function orbit(tle1: string, tle2: string) {
+  //const tle1 = `1 60379U 24140A   25348.91457039  .00000095  00000+0  12833-3 0  9999`
+  //const tle2 = `2 60379  88.9761 299.0549 0016230 203.7248 156.3156 13.50978418 67648`
   const satrec = satellite.twoline2satrec(tle1, tle2)
-
   const totalMinutesARound = Math.ceil(2 * Math.PI / satrec.no)
   const paddingBetweenPoints = 1
   const minuteSpan = 2 * Math.PI / (satrec.no * paddingBetweenPoints)
 
   const positionsEci = []
   const velocitiesEci = []
-  console.log('Minute span: ', minuteSpan)
 
   for (let i = 0; i < totalMinutesARound; i += 1) {
     const currentMinute = i * minuteSpan
@@ -36,4 +71,17 @@ export function orbit() {
     positionsEci,
     velocitiesEci
   }
+}
+
+
+export function geoOrbit(longtitude: number): Cesium.Cartesian3[] {
+  const geoHeight = 35786 + 6371 // km
+  const latitude = 0
+  const positions: Cesium.Cartesian3[] = []
+  for (let lon = -180; lon <= 180; lon += 1) {
+    const currentLon = (longtitude + lon) % 360 - 180
+    const position = Cesium.Cartesian3.fromDegrees(currentLon, latitude, geoHeight * 1000)
+    positions.push(position)
+  }
+  return positions
 }
