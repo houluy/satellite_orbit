@@ -1,19 +1,15 @@
 import * as satellite from 'satellite.js'
 import * as Cesium from 'cesium'
 
-type SatelliteTLE = {
-    [key: string]: {
-      tle1: string,
-      tle2: string
-    }
+export type SatelliteRec = {
+    [key: string]: satellite.SatRec
   }
 
-export function constellation(tles: string): SatelliteTLE {
+export function constellation(tles: string): SatelliteRec {
   const tleLines = tles.split('\n').filter(line => line.trim().length > 0)
   let index = 0
-  console.log(tleLines)
   
-  const satellites: SatelliteTLE = {}
+  const satellites: SatelliteRec = {}
   while (index < tleLines.length) {
     let satName = tleLines[index]
     let tle1: string
@@ -28,19 +24,15 @@ export function constellation(tles: string): SatelliteTLE {
       tle2 = tleLines[index + 2]
       index = index + 3
     }
-    satellites[satName] = {
-      tle1,
-      tle2
-    }
+    satellites[satName] = satellite.twoline2satrec(tle1, tle2)
   }
   return satellites
 }
 
 
-export function orbit(tle1: string, tle2: string) {
+export function orbit(satrec: satellite.SatRec) {
   //const tle1 = `1 60379U 24140A   25348.91457039  .00000095  00000+0  12833-3 0  9999`
   //const tle2 = `2 60379  88.9761 299.0549 0016230 203.7248 156.3156 13.50978418 67648`
-  const satrec = satellite.twoline2satrec(tle1, tle2)
   const totalMinutesARound = Math.ceil(2 * Math.PI / satrec.no)
   const paddingBetweenPoints = 1
   const minuteSpan = 2 * Math.PI / (satrec.no * paddingBetweenPoints)
