@@ -13,9 +13,19 @@ import { orbit, constellation, geoOrbit, type SatelliteRec } from '@/components/
 import { onMounted, watch } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
 
+async function loadConfig() {
+  const url = import.meta.env.BASE_URL + "LTESAT/config/dump.ENB-gnb-imt2030-ntn.cfg"
+  const response = await fetch(url)
+  const cfg = await response.json()
+  return cfg
+}
+
 const gui = new GUI()
 
 const config = {
+  cesium: {
+    depthDetection: false
+  },
   satellite: {
     pointSize: 20,
     pointColor: "#ECE4B7",
@@ -25,29 +35,39 @@ const config = {
     velocitySize: 5,
     velocityColor: "#f7ece1",
     running: false,
-    showVelocity: {
-      toggle: true,
-      value: null
-    },
+    showOrbit: false,
+    showVelocity: false,
+    showSatellite: true,
   }
 }
 
-function drawUE(position: Cesium.Cartesian3, viewer: Cesium.Viewer) {
-  const UE = viewer.entities.add({
-    position: position,
-    model: {
-      uri: '/Cesium/models/UE/UE.gltf',
-      scale: 10.0,
-    }
-  })
-}
+const orbitsEntities: Cesium.Entity[] = []
+const satelliteEntities: Cesium.Entity[] = []
+const velocityEntities: Cesium.Entity[] = []
+const connectionEntities: Cesium.Entity[] = []
 
 let satellites: SatelliteRec = {}
+const cesiumFolder = gui.addFolder("cesium")
+cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
+  const viewerStore = useViewerStore()
+  const viewer = viewerStore.viewer
+  viewer!.scene.globe.depthTestAgainstTerrain = value
+})
 const satFolder = gui.addFolder("satellite")
 const velocityFolder = satFolder.addFolder("velocity")
 
 satFolder.add(config.satellite, "pointSize", 1, 50)
 satFolder.add(config.satellite, "orbitSize", 1, 50)
+satFolder.add(config.satellite, "showOrbit").name("Show Orbit").onChange((value: boolean) => {
+  orbitsEntities.forEach((entity) => {
+    entity.show = value
+  })
+})
+satFolder.add(config.satellite, "showSatellite").name("Show Satellite").onChange((value: boolean) => {
+  satelliteEntities.forEach((entity) => {
+    entity.show = value
+  })
+})
 satFolder.addColor(config.satellite, "orbitColor").onChange((value: string) => {
   const viewerStore = useViewerStore()
   const viewer = viewerStore.viewer
@@ -68,7 +88,12 @@ satFolder.addColor(config.satellite, "pointColor").onChange((value: string) => {
     }
   })
 })
-satFolder.addColor(config.satellite, "velocityColor").onChange((value: string) => {
+satFolder.add( config.satellite, "running" ).onChange((value: boolean) => {
+  const viewerStore = useViewerStore()
+  const viewer = viewerStore.viewer
+  viewer!.clockViewModel.shouldAnimate = value
+})
+velocityFolder.addColor(config.satellite, "velocityColor").onChange((value: string) => {
   const viewerStore = useViewerStore()
   const viewer = viewerStore.viewer
   const entities = viewer?.entities
@@ -78,31 +103,44 @@ satFolder.addColor(config.satellite, "velocityColor").onChange((value: string) =
     }
   })
 })
-satFolder.add( config.satellite, "running" ).onChange((value: boolean) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  viewer!.clockViewModel.shouldAnimate = value
-})
+
 velocityFolder.add(config.satellite, "velocityLength", 1, 100)
 velocityFolder.add(config.satellite, "velocitySize", 1, 100)
-velocityFolder.add(config.satellite.showVelocity, "toggle").onChange((value: boolean) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  const entities = viewer?.entities
-  entities?.values.forEach((entity) => {
-    if (entity.name?.endsWith('_velocity') && entity.polyline) {
-      entity.polyline.show = value
-    }
+velocityFolder.add(config.satellite, "showVelocity").name("Show Velocity").onChange((value: boolean) => {
+  velocityEntities.forEach((entity) => {
+    entity.show = value
   })
 })
 
 onMounted(async () => {
+  const cfg =  await loadConfig()
+  console.log(cfg)
+  const ntnCfg = cfg.nr_cell_default.ntn
+  const groundPosition = Cesium.Cartesian3.fromDegrees(
+    ntnCfg.ground_position.longitude,
+    ntnCfg.ground_position.latitude,
+    0
+  )
+
+  const UEPosition = Cesium.Cartesian3.fromDegrees(
+    ntnCfg.channel_sim_control.ue_position.longitude,
+    ntnCfg.channel_sim_control.ue_position.latitude,
+    0
+  )
+
+  const tleFile = ntnCfg.tle_filename
+
+  const tleFileUrl = import.meta.env.BASE_URL + `LTESAT/tle/${tleFile}`
+  const response = await fetch(tleFileUrl)
+  const tleText = await response.text()
+
   const viewerStore = useViewerStore()
   watch(() => viewerStore.viewerReader, (newVal: boolean) => {
     if (newVal) {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
-      satellites = constellation(TLEString)
+
+      satellites = constellation(tleText)
       Object.keys(satellites).forEach((satName) => {
         const satrec = satellites[satName]
         if (!satrec) return
@@ -149,7 +187,7 @@ onMounted(async () => {
         }
 
         // Draw Orbit
-        entities?.add({
+        orbitsEntities.push(entities?.add({
           name: `${satName}_orbit`,
           polyline: {
             positions: positionsOfCesium,
@@ -157,54 +195,86 @@ onMounted(async () => {
               return config.satellite.orbitSize
             }, false),
             material: Cesium.Color.fromCssColorString(config.satellite.orbitColor),
-          }
-        })
-        // Draw Satellite Point
+          },
+          show: config.satellite.showOrbit,
+        })!)
+        // Draw Satellite Point (time-dynamic)
         let currentPosition = positionsOfCesium[0]
-        const timeDynamicPosition = new Cesium.CallbackPositionProperty((time) => {
-          const currentSecond = Cesium.JulianDate.compare(time!, viewer!.clockViewModel.startTime)
-          const positionAndVelocityAtTime = satellite.sgp4(satrec, currentSecond / 60);
-          const positionEci = positionAndVelocityAtTime?.position
+        const timeDynamicPosition = new Cesium.CallbackPositionProperty((time, result) => {
+          // seconds since viewer clock start
+          const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+          const minutesSinceStart = secondsSinceStart / 60
+          const pv = satellite.sgp4(satrec, minutesSinceStart)
+          const positionEci = pv?.position
           if (positionEci) {
-            const pos = new Cesium.Cartesian3(positionEci?.x, positionEci?.y, positionEci?.z)
+            const pos = new Cesium.Cartesian3(positionEci.x, positionEci.y, positionEci.z)
             currentPosition = Cesium.Cartesian3.multiplyByScalar(pos, kmToMeter, new Cesium.Cartesian3())
             return currentPosition
-          } else {
-            return currentPosition
           }
+          return currentPosition
         }, false)
-        entities?.add({
+
+        satelliteEntities.push(entities?.add({
           name: satName,
           position: timeDynamicPosition,
           point: {
-            pixelSize: new Cesium.CallbackProperty(() => {
-              return config.satellite.pointSize
-            }, false),
+            pixelSize: new Cesium.CallbackProperty(() => config.satellite.pointSize, false),
             color: Cesium.Color.fromCssColorString(config.satellite.pointColor).withAlpha(0.8),
           },
-        })
+          show: config.satellite.showSatellite,
+        })!)
 
-        // Draw Velocity Arrow
-        const velocityVec3 = new Cesium.Cartesian3(velocitiesOfCesium[0]?.x, velocitiesOfCesium[0]?.y, velocitiesOfCesium[0]?.z)
-        const velocityEciScaled = new Cesium.CallbackProperty(() => {
-          return Cesium.Cartesian3.multiplyByScalar(velocityVec3!, config.satellite.velocityLength, new Cesium.Cartesian3())
-        }, false)
-        const nextPositionEci = new Cesium.CallbackPositionProperty(() => {
-          return Cesium.Cartesian3.add(positionsOfCesium[0]!, velocityEciScaled.getValue(), new Cesium.Cartesian3())
-        }, false)
-
-        entities?.add({
+        // Draw Velocity Arrow - compute current position & next position from velocity at given time
+        velocityEntities.push(entities?.add({
           name: `${satName}_velocity`,
           polyline: {
-            positions: new Cesium.CallbackProperty(() => {
-              return [positionsOfCesium[0], nextPositionEci.getValue()]
+            positions: new Cesium.CallbackProperty((time, result) => {
+              const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+              const minutesSinceStart = secondsSinceStart / 60
+              const pv = satellite.sgp4(satrec, minutesSinceStart)
+              if (pv && pv.position && pv.velocity) {
+                const posEci = pv.position
+                const velEci = pv.velocity
+                const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(posEci.x, posEci.y, posEci.z), kmToMeter, new Cesium.Cartesian3())
+                const vel = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(velEci.x, velEci.y, velEci.z), kmToMeter, new Cesium.Cartesian3())
+                const velScaled = Cesium.Cartesian3.multiplyByScalar(vel, config.satellite.velocityLength, new Cesium.Cartesian3())
+                const nextPos = Cesium.Cartesian3.add(pos, velScaled, new Cesium.Cartesian3())
+                return [pos, nextPos]
+              }
+              // fallback to initial sample
+              return [currentPosition, Cesium.Cartesian3.add(currentPosition!, new Cesium.Cartesian3(0, 0, 0), new Cesium.Cartesian3())]
             }, false),
-            width: new Cesium.CallbackProperty(() => {
-              return config.satellite.velocitySize
-            }, false),
+            width: new Cesium.CallbackProperty(() => config.satellite.velocitySize, false),
             material: new Cesium.PolylineArrowMaterialProperty(Cesium.Color.fromCssColorString(config.satellite.velocityColor)),
-          }
-        })
+          },
+          show: config.satellite.showVelocity,
+        })!)
+
+        // Draw connection between satellite and ground station
+        connectionEntities.push(entities?.add({
+          name: `${satName}_connection`,
+          polyline: {
+            positions: new Cesium.CallbackProperty((time, result) => {
+              const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+              const minutesSinceStart = secondsSinceStart / 60
+              const pv = satellite.sgp4(satrec, minutesSinceStart)
+              if (pv && pv.position) {
+                const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(pv.position.x, pv.position.y, pv.position.z), kmToMeter, new Cesium.Cartesian3())
+                return [pos, groundPosition]
+              }
+              return [currentPosition, groundPosition]
+            }, false),
+            width: 2,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: Cesium.Color.YELLOW,
+              dashLength: 16,
+              gapColor: Cesium.Color.TRANSPARENT,
+              dashPattern: 255,
+            }),
+            arcType: Cesium.ArcType.NONE
+          },
+        })!
+        )
       })
       // Draw GEO
       const geoPositions = geoOrbit(0)
@@ -216,20 +286,39 @@ onMounted(async () => {
           material: Cesium.Color.GREEN,
         }
       })
+
+      // Draw Ground Station
+      entities?.add({
+        name: `GroundStation`,
+        position: groundPosition,
+        point: {
+          pixelSize: 20,
+          color: Cesium.Color.RED,
+        }
+      })
+
+      // Draw UE
+      entities?.add({
+        name: `UE`,
+        position: UEPosition,
+        point: {
+          pixelSize: 20,
+          color: Cesium.Color.BLUE,
+        }
+      })
+
+      // Draw Connection
+
+      const handler = new Cesium.ScreenSpaceEventHandler(viewer!.scene.canvas)
+      handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
+        const pickedObject = viewer!.scene.pick(movement.position)
+        if (Cesium.defined(pickedObject)) {
+          console.log('Picked object:', pickedObject)
+        }
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
     }
   })
 })
-
-const toggles = {
-  rotate: false,
-  satelliteModel: false,
-  groundStationModel: false,
-  TLESatellite: false,
-  allSatelliteModel: false,
-  running: false,
-  connection: false,
-}
-
 
 //
 //modelFolder.add(toggles, 'connection').onChange((value: boolean) => {

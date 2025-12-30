@@ -57,7 +57,7 @@ async function initViewer(props: Props, callback?: () => void) {
       //}
     }
   })
-  viewer.scene.globe.depthTestAgainstTerrain = true
+  viewer.scene.globe.depthTestAgainstTerrain = false
   // 太阳光默认打开
   // viewer.scene.globe.enableLighting = true;
   //隐藏时间线控件
