@@ -1,17 +1,25 @@
 <template>
   <Viewer />
+  <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
 </template>
 
 <script lang="ts" setup>
 
 import Viewer from '@/components/viewer/viewer.vue'
+import Tooltip from '@/components/panel/Tooltip.vue'
 import { useViewerStore } from './store/viewer'
 import { GUI } from 'lil-gui'
 import * as Cesium from 'cesium'
 import * as satellite from 'satellite.js'
-import { orbit, constellation, geoOrbit, type SatelliteRec } from '@/components/satellite/orbit'
-import { onMounted, watch } from 'vue'
+import { orbit, constellation, geoOrbit, type SatelliteRec, calcElevation } from '@/components/satellite/orbit'
+import { onMounted, watch, ref } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
+import DataPanel from '@/components/panel/DataPanel.vue'
+
+const tooltipVisible = ref(false)
+const panel = ref<HTMLElement|null>(null)
+const tooltipHtml = ref("")
+const tooltipStyle = { left: '0px', top: '0px' }
 
 async function loadConfig() {
   const url = import.meta.env.BASE_URL + "LTESAT/config/dump.ENB-gnb-imt2030-ntn.cfg"
@@ -116,17 +124,19 @@ onMounted(async () => {
   const cfg =  await loadConfig()
   console.log(cfg)
   const ntnCfg = cfg.nr_cell_default.ntn
-  const groundPosition = Cesium.Cartesian3.fromDegrees(
-    ntnCfg.ground_position.longitude,
-    ntnCfg.ground_position.latitude,
+  const groundPositionCart = new Cesium.Cartographic(
+    Cesium.Math.toRadians(ntnCfg.ground_position.longitude),
+    Cesium.Math.toRadians(ntnCfg.ground_position.latitude),
     0
   )
+  const groundPosition = Cesium.Cartographic.toCartesian(groundPositionCart)
 
-  const UEPosition = Cesium.Cartesian3.fromDegrees(
-    ntnCfg.channel_sim_control.ue_position.longitude,
-    ntnCfg.channel_sim_control.ue_position.latitude,
+  const UEPositionCart = new Cesium.Cartographic(
+    Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.longitude),
+    Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.latitude),
     0
   )
+  const UEPosition = Cesium.Cartographic.toCartesian(UEPositionCart)
 
   const tleFile = ntnCfg.tle_filename
 
@@ -140,7 +150,7 @@ onMounted(async () => {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
 
-      satellites = constellation(tleText)
+      satellites = constellation(TLEString)
       Object.keys(satellites).forEach((satName) => {
         const satrec = satellites[satName]
         if (!satrec) return
@@ -172,6 +182,7 @@ onMounted(async () => {
         const kmToMeter = 1000
         const positionsOfCesium: Cesium.Cartesian3[] = []
         const velocitiesOfCesium: Cesium.Cartesian3[] = []
+        let elevation: number
         positionsEci.forEach((positionEci, index) => {
           const pos = new Cesium.Cartesian3(positionEci?.x, positionEci?.y, positionEci?.z)
           const posOfMeter = Cesium.Cartesian3.multiplyByScalar(pos, kmToMeter, new Cesium.Cartesian3())
@@ -205,6 +216,7 @@ onMounted(async () => {
           const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
           const minutesSinceStart = secondsSinceStart / 60
           const pv = satellite.sgp4(satrec, minutesSinceStart)
+          //elevation = calcElevation(satrec, groundPositionCart, new Date(time.toString()))
           const positionEci = pv?.position
           if (positionEci) {
             const pos = new Cesium.Cartesian3(positionEci.x, positionEci.y, positionEci.z)
@@ -266,11 +278,11 @@ onMounted(async () => {
             }, false),
             width: 2,
             material: new Cesium.PolylineDashMaterialProperty({
-              color: Cesium.Color.YELLOW,
-              dashLength: 16,
-              gapColor: Cesium.Color.TRANSPARENT,
-              dashPattern: 255,
-            }),
+                  color: Cesium.Color.YELLOW,
+                  dashLength: 16,
+                  gapColor: Cesium.Color.TRANSPARENT,
+                  dashPattern: 255,
+              }),
             arcType: Cesium.ArcType.NONE
           },
         })!
@@ -316,6 +328,22 @@ onMounted(async () => {
           console.log('Picked object:', pickedObject)
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+
+      const scratch = new Cesium.Cartesian2();
+      handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
+        const pickedObject = viewer!.scene.pick(movement.endPosition)
+        //const screenPosition = viewer!.scene.cartesianToCanvasCoordinates(movement.position, scratch)
+        //console.log(screenPosition)
+        if (Cesium.defined(pickedObject)) {
+          console.log('Picked object:', pickedObject)
+          tooltipVisible.value = true
+          tooltipStyle.left = `${movement.endPosition.x + 10}px`
+          tooltipStyle.top = `${movement.endPosition.y + 10}px`
+          tooltipHtml.value = `<strong>${pickedObject.id.name}</strong>`
+        } else {
+          tooltipVisible.value = false
+        }
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
     }
   })
 })
@@ -347,4 +375,12 @@ onMounted(async () => {
 //})
 </script>
 
+<style scoped>
+.panel {
+  position: relative;
+  z-index: 10;
+  size: small;
+}
+
+</style>
 
