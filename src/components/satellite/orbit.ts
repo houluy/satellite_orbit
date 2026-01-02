@@ -77,3 +77,44 @@ export function geoOrbit(longtitude: number): Cesium.Cartesian3[] {
   }
   return positions
 }
+
+
+export function calcSubSatellitePoint(satRec: satellite.SatRec, when = new Date()): Cesium.Cartographic {
+  const pv = satellite.propagate(satRec, when)
+  if (pv) {
+    const positionEci = pv.position
+    const gmst = satellite.gstime(when)
+    const geodetic = satellite.eciToGeodetic(positionEci, gmst)
+    const latDeg = geodetic.latitude * (180 / Math.PI)
+    let lonDeg = geodetic.longitude * (180 / Math.PI)
+    if (lonDeg < -180) {
+      lonDeg += 360
+    } else if (lonDeg > 180) {
+      lonDeg -= 360
+    }
+    return new Cesium.Cartographic(Cesium.Math.toRadians(lonDeg), Cesium.Math.toRadians(latDeg), geodetic.height * 1000)
+  } else {
+    return new Cesium.Cartographic(0, 0, 0)
+  }
+}
+
+
+export function calcElevation(satRec: satellite.SatRec, groundStation: Cesium.Cartographic, when = new Date()): number {
+  // Calculate the elevation angle of the satellite from the ground station
+  // Formulation
+  // α = arccos(sin(φ1)sin(φ2) + cos(φ1)cos(φ2)cos(λ1 - λ2))
+  // E = arccos[(h + Re)/d * sin(α)]
+  // d = sqrt((h + Re)² + Re² - 2(h + Re)Re * cos(α))
+  const subSatellitePoint = calcSubSatellitePoint(satRec, when)
+  const halfGeocentricAngle = Math.acos(
+    Math.sin(groundStation.latitude) * Math.sin(subSatellitePoint.latitude) +
+    Math.cos(groundStation.latitude) * Math.cos(subSatellitePoint.latitude) * Math.cos(groundStation.longitude - subSatellitePoint.longitude)
+  )
+
+  const Re = 6371 // km
+  const h = subSatellitePoint.height / 1000 // km
+  const d = Math.sqrt((h + Re) ** 2 + Re ** 2 - 2 * (h + Re) * Re * Math.cos(halfGeocentricAngle))
+  const elevation = Math.acos((h + Re) / d * Math.sin(halfGeocentricAngle))
+  return elevation * (180 / Math.PI)
+}
+  
