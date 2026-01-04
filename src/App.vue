@@ -1,6 +1,7 @@
 <template>
   <Viewer />
   <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
+  <DrawPanel v-model="showDetail" />
 </template>
 
 <script lang="ts" setup>
@@ -15,8 +16,10 @@ import { orbit, constellation, geoOrbit, type SatelliteRec, calcElevation } from
 import { onMounted, watch, ref } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
 import DataPanel from '@/components/panel/DataPanel.vue'
+import DrawPanel from './components/panel/DrawPanel.vue'
 
 const tooltipVisible = ref(false)
+const showDetail = ref(false)
 const panel = ref<HTMLElement|null>(null)
 const tooltipHtml = ref("")
 const tooltipStyle = { left: '0px', top: '0px' }
@@ -326,6 +329,7 @@ onMounted(async () => {
         const pickedObject = viewer!.scene.pick(movement.position)
         if (Cesium.defined(pickedObject)) {
           console.log('Picked object:', pickedObject)
+          showDetail.value = true
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 

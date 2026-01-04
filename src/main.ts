@@ -3,7 +3,7 @@ import './style.css'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import App from './App.vue'
 import { createPinia } from 'pinia'
-import type { Viewer } from 'cesium'
+import 'element-plus/dist/index.css'
 
 // @ts-ignore
 window.CESIUM_BASE_URL = '/Cesium'
