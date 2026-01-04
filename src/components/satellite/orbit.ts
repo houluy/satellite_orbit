@@ -1,15 +1,21 @@
 import * as satellite from 'satellite.js'
 import * as Cesium from 'cesium'
 
-export type SatelliteRec = {
-    [key: string]: satellite.SatRec
-  }
+import type { Satellite, Satellites, Orbit } from '@/model/satellite'
 
-export function constellation(tles: string): SatelliteRec {
+export function eciToCartesian3(positionEci: satellite.EciVec3<number>[], factor: number = 1000): Cesium.Cartesian3[] {
+  const positions: Cesium.Cartesian3[] = []
+  for (const position of positionEci) {
+    positions.push(Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(position.x, position.y, position.z), factor, new Cesium.Cartesian3()))
+  }
+  return positions
+}
+
+export function constellation(tles: string): Satellites{
   const tleLines = tles.split('\n').filter(line => line.trim().length > 0)
   let index = 0
   
-  const satellites: SatelliteRec = {}
+  const satellites: Satellites = {}
   while (index < tleLines.length) {
     let satName = tleLines[index]
     let tle1: string
@@ -24,13 +30,23 @@ export function constellation(tles: string): SatelliteRec {
       tle2 = tleLines[index + 2]
       index = index + 3
     }
-    satellites[satName] = satellite.twoline2satrec(tle1, tle2)
+    const satrec = satellite.twoline2satrec(tle1, tle2)
+    const orbit = calcOrbit(satrec, satName)
+    const sat: Satellite = {
+      id: satrec.satnum,
+      name: satName!,
+      satrec,
+      orbit,
+      position: orbit.positions[0]!,
+      velocity: orbit.velocities[0]!,
+    }
+    satellites[sat.name] = sat
   }
   return satellites
 }
 
 
-export function orbit(satrec: satellite.SatRec) {
+export function calcOrbit(satrec: satellite.SatRec, satName?: string): Orbit {
   //const tle1 = `1 60379U 24140A   25348.91457039  .00000095  00000+0  12833-3 0  9999`
   //const tle2 = `2 60379  88.9761 299.0549 0016230 203.7248 156.3156 13.50978418 67648`
   const totalMinutesARound = Math.ceil(2 * Math.PI / satrec.no)
@@ -56,13 +72,30 @@ export function orbit(satrec: satellite.SatRec) {
     positionsEci.push(positionEci)
     velocitiesEci.push(velocityEci)
   }
+  // Cyclic orbit
+  if (positionsEci[0]) {
+    positionsEci.push(positionsEci[0])
+  }
+
+  const currentOrbit: Orbit = {
+    id: satrec.satnum,
+    name: satName || satrec.satnum,
+    epoch: satellite.invjday(satrec.jdsatepoch),
+    meanMotion: satrec.no,
+    inclination: satrec.inclo,
+    raOfAscNode: satrec.nodeo,
+    argOfPericenter: satrec.argpo,
+    meanAnomaly: satrec.mo,
+    eccentricity: satrec.ecco,
+    semiMajorAxis: satrec.a,
+    bstar: satrec.bstar,
+    positions: eciToCartesian3(positionsEci),
+    velocities: eciToCartesian3(velocitiesEci),
+  }
   // position is in km, velocity is in km/s, both the ECI coordinate frame.
   
 
-  return {
-    positionsEci,
-    velocitiesEci
-  }
+  return currentOrbit
 }
 
 
