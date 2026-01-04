@@ -12,9 +12,10 @@ import { useViewerStore } from './store/viewer'
 import { GUI } from 'lil-gui'
 import * as Cesium from 'cesium'
 import * as satellite from 'satellite.js'
-import { orbit, constellation, geoOrbit, type SatelliteRec, calcElevation } from '@/components/satellite/orbit'
+import { calcOrbit, constellation, geoOrbit, type SatelliteRec, calcElevation, eciToCartesian3 } from '@/components/satellite/orbit'
 import { onMounted, watch, ref } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
+import type { Satellite, Satellites, Orbit, GroundObject, Satellite2GroundLink, CommunicationCapability, CommunicationLink } from '@/model/satellite';
 import DataPanel from '@/components/panel/DataPanel.vue'
 import DrawPanel from './components/panel/DrawPanel.vue'
 
@@ -57,7 +58,10 @@ const satelliteEntities: Cesium.Entity[] = []
 const velocityEntities: Cesium.Entity[] = []
 const connectionEntities: Cesium.Entity[] = []
 
-let satellites: SatelliteRec = {}
+const groundStations: { [key: string]: GroundObject } = {}
+const UEs: { [key: string]: GroundObject } = {}
+
+let satellites: Satellites = {}
 const cesiumFolder = gui.addFolder("cesium")
 cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
   const viewerStore = useViewerStore()
@@ -125,7 +129,6 @@ velocityFolder.add(config.satellite, "showVelocity").name("Show Velocity").onCha
 
 onMounted(async () => {
   const cfg =  await loadConfig()
-  console.log(cfg)
   const ntnCfg = cfg.nr_cell_default.ntn
   const groundPositionCart = new Cesium.Cartographic(
     Cesium.Math.toRadians(ntnCfg.ground_position.longitude),
@@ -141,6 +144,30 @@ onMounted(async () => {
   )
   const UEPosition = Cesium.Cartographic.toCartesian(UEPositionCart)
 
+  const groundStation: GroundObject = {
+    id: 'GS001',
+    name: 'Ground Station 001',
+    type: "station",
+    position: groundPosition,
+    positionCartographic: groundPositionCart,
+    commCap: {
+      eirp: 50,
+      gt: 30,
+    }
+  }
+
+  const UE: GroundObject = {
+    id: 'UE001',
+    name: 'UE 001',
+    type: "ue",
+    position: UEPosition,
+    positionCartographic: UEPositionCart,
+    commCap: {
+      eirp: 20,
+      gt: 20,
+    }
+  }
+
   const tleFile = ntnCfg.tle_filename
 
   const tleFileUrl = import.meta.env.BASE_URL + `LTESAT/tle/${tleFile}`
@@ -148,63 +175,20 @@ onMounted(async () => {
   const tleText = await response.text()
 
   const viewerStore = useViewerStore()
+  const links: Satellite2GroundLink[] = []
+
   watch(() => viewerStore.viewerReader, (newVal: boolean) => {
     if (newVal) {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
 
       satellites = constellation(TLEString)
-      Object.keys(satellites).forEach((satName) => {
-        const satrec = satellites[satName]
-        if (!satrec) return
-        const totalMinutesARound = Math.ceil(2 * Math.PI / satrec.no)
-        const paddingBetweenPoints = 1
-        const minuteSpan = 2 * Math.PI / (satrec.no * paddingBetweenPoints)
-
-        const positionsEci: satellite.EciVec3<number>[] = []
-        const velocitiesEci: satellite.EciVec3<number>[] = []
-
-        for (let i = 0; i < totalMinutesARound; i += 1) {
-          const currentMinute = i * minuteSpan
-          const positionAndVelocity = satellite.sgp4(satrec, i);
-          if (positionAndVelocity === null) {
-            switch (satrec.error) {
-              // all possible values are listed in SatRecError enum:
-              case satellite.SatRecError.Decayed:
-                console.log('The satellite has decayed')
-              // ...
-            }
-          }
-          const positionEci = positionAndVelocity?.position;
-          const velocityEci = positionAndVelocity?.velocity;
-          if (positionEci && velocityEci) {
-            positionsEci.push(positionEci)
-            velocitiesEci.push(velocityEci)
-          }
-        }
-        const kmToMeter = 1000
-        const positionsOfCesium: Cesium.Cartesian3[] = []
-        const velocitiesOfCesium: Cesium.Cartesian3[] = []
-        let elevation: number
-        positionsEci.forEach((positionEci, index) => {
-          const pos = new Cesium.Cartesian3(positionEci?.x, positionEci?.y, positionEci?.z)
-          const posOfMeter = Cesium.Cartesian3.multiplyByScalar(pos, kmToMeter, new Cesium.Cartesian3())
-          positionsOfCesium.push(posOfMeter)
-          const velocityEci = velocitiesEci[index]
-          const vel = new Cesium.Cartesian3(velocityEci?.x, velocityEci?.y, velocityEci?.z)
-          const velOfMeter = Cesium.Cartesian3.multiplyByScalar(vel, kmToMeter, new Cesium.Cartesian3())
-          velocitiesOfCesium.push(velOfMeter)
-        })
-        // Cyclic orbit
-        if (positionsOfCesium[0]) {
-          positionsOfCesium.push(positionsOfCesium[0])
-        }
-
+      Object.entries(satellites).forEach(([satName, sat]) => {
         // Draw Orbit
         orbitsEntities.push(entities?.add({
           name: `${satName}_orbit`,
           polyline: {
-            positions: positionsOfCesium,
+            positions: sat.orbit.positions,
             width: new Cesium.CallbackProperty(() => {
               return config.satellite.orbitSize
             }, false),
@@ -213,18 +197,20 @@ onMounted(async () => {
           show: config.satellite.showOrbit,
         })!)
         // Draw Satellite Point (time-dynamic)
-        let currentPosition = positionsOfCesium[0]
+        let currentPosition = sat.position
+
+        // Generate links with gNB and UE
+
+
         const timeDynamicPosition = new Cesium.CallbackPositionProperty((time, result) => {
           // seconds since viewer clock start
           const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
           const minutesSinceStart = secondsSinceStart / 60
-          const pv = satellite.sgp4(satrec, minutesSinceStart)
+          const pv = satellite.sgp4(sat.satrec, minutesSinceStart)
           //elevation = calcElevation(satrec, groundPositionCart, new Date(time.toString()))
           const positionEci = pv?.position
           if (positionEci) {
-            const pos = new Cesium.Cartesian3(positionEci.x, positionEci.y, positionEci.z)
-            currentPosition = Cesium.Cartesian3.multiplyByScalar(pos, kmToMeter, new Cesium.Cartesian3())
-            return currentPosition
+            eciToCartesian3([positionEci])[0]
           }
           return currentPosition
         }, false)
@@ -246,7 +232,7 @@ onMounted(async () => {
             positions: new Cesium.CallbackProperty((time, result) => {
               const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
               const minutesSinceStart = secondsSinceStart / 60
-              const pv = satellite.sgp4(satrec, minutesSinceStart)
+              const pv = satellite.sgp4(sat.satrec, minutesSinceStart)
               if (pv && pv.position && pv.velocity) {
                 const posEci = pv.position
                 const velEci = pv.velocity

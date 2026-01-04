@@ -33,8 +33,8 @@ async function initViewer(props: Props, callback?: () => void) {
       Cesium.IonResource.fromAssetId(3956), {
         requestVertexNormals: true
     }),
-    showRenderLoopErrors:false,
-    shouldAnimate:true,
+    showRenderLoopErrors: false,
+    shouldAnimate: false,
     selectionIndicator: false,
     timeline: false,
     baseLayerPicker: false,
