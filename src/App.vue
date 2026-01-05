@@ -26,8 +26,6 @@ const panel = ref<HTMLElement|null>(null)
 const tooltipHtml = ref("")
 const tooltipStyle = { left: '0px', top: '0px' }
 
-
-
 const gui = new GUI()
 
 const config = {
@@ -48,19 +46,28 @@ const config = {
     showSatellite: true,
   },
   link: {
-    show: false,
+    show: true,
     UELinkColor: "#B8336A",
     GroundStationLinkColor: "#ABDAFC",
+  },
+  groundStation: {
+    pointSize: 10,
+    pointColor: "#3BB273",
+  },
+  ue: {
+    pointSize: 10,
+    pointColor: "#E1BC29",
   }
 }
 
 const orbitsEntities: Cesium.Entity[] = []
 const satelliteEntities: Cesium.Entity[] = []
 const velocityEntities: Cesium.Entity[] = []
-const connectionEntities: Cesium.Entity[] = []
+const ueLinkEntities: Cesium.Entity[] = []
+const stationLinkEntities: Cesium.Entity[] = []
 
-const groundStations: { [key: string]: GroundObject } = {}
-const UEs: { [key: string]: GroundObject } = {}
+const groundStations: GroundObject[] = []
+const UEs: GroundObject[] = []
 
 let satellites: Satellites = {}
 const cesiumFolder = gui.addFolder("cesium")
@@ -72,6 +79,22 @@ cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
 const satFolder = gui.addFolder("satellite")
 const velocityFolder = satFolder.addFolder("velocity")
 const linkFolder = gui.addFolder("link")
+const groundStationFolder = gui.addFolder("groundStation")
+const ueFolder = gui.addFolder("ue")
+
+groundStationFolder.addColor(config.groundStation, "pointColor").onChange((value: string) => {
+  groundStations.forEach((groundStation) => {
+    groundStation.point.color = Cesium.Color.fromCssColorString(value)
+  })
+
+})
+ueFolder.addColor(config.ue, "pointColor").onChange((value: string) => {
+  UEs.forEach((ue) => {
+    ue.point.color = Cesium.Color.fromCssColorString(value)
+  })
+})
+groundStationFolder.add(config.groundStation, "pointSize", 1, 50)
+ueFolder.add(config.ue, "pointSize", 1, 50)
 
 satFolder.add(config.satellite, "pointSize", 1, 50)
 satFolder.add(config.satellite, "orbitSize", 1, 50)
@@ -130,10 +153,28 @@ velocityFolder.add(config.satellite, "showVelocity").name("Show Velocity").onCha
 })
 
 linkFolder.addColor(config.link, "UELinkColor").onChange((value: string) => {
-  
+  ueLinkEntities.forEach((entity) => {
+    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
+      color: Cesium.Color.fromCssColorString(value),
+      dashLength: 16,
+      gapColor: Cesium.Color.TRANSPARENT,
+      dashPattern: 255,
+    })
+  })
 })
 
 linkFolder.addColor(config.link, "GroundStationLinkColor").onChange((value: string) => {
+  stationLinkEntities.forEach((entity) => {
+    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
+      color: Cesium.Color.fromCssColorString(value),
+      dashLength: 16,
+      gapColor: Cesium.Color.TRANSPARENT,
+      dashPattern: 255,
+    })
+  }) 
+})
+
+linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) => {
   
 })
 
@@ -227,14 +268,15 @@ onMounted(async () => {
       })
 
       for (const gndObj of groundObjects) {
-        entities?.add({
+        const gndEntity = entities?.add({
           name: gndObj.name,
           position: gndObj.position,
           point: {
             pixelSize: 20,
-            color: Cesium.Color.RED,
+            color: Cesium.Color.fromCssColorString((gndObj.type === "station") ? config.groundStation.pointColor : config.ue.pointColor),
           }
         })
+        gndObj.entity = gndEntity
       }
 
       Object.keys(satellites).forEach((satName) => {
@@ -243,8 +285,8 @@ onMounted(async () => {
           for (const gndObj of groundObjects) {
             const link = new Satellite2GroundLink(sat, gndObj)
             // Draw connection between satellite and ground station
-            connectionEntities.push(entities?.add({
-              name: `${satName}_connection`,
+            const linkEntity = entities?.add({
+              name: `${satName}-${gndObj.name}_link`,
               polyline: {
                 positions: new Cesium.CallbackProperty((time, result) => {
                   const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
@@ -258,20 +300,25 @@ onMounted(async () => {
                 }, false),
                 width: 2,
                 material: new Cesium.PolylineDashMaterialProperty({
-                      color: Cesium.Color.fromCssColorString((gndObj.type === 'station')? config.link.GroundStationLinkColor : config.link.UELinkColor),
-                      dashLength: 16,
-                      gapColor: Cesium.Color.TRANSPARENT,
-                      dashPattern: 255,
+                    color: Cesium.Color.fromCssColorString((gndObj.type === 'station')? config.link.GroundStationLinkColor : config.link.UELinkColor),
+                    dashLength: 16,
+                    gapColor: Cesium.Color.TRANSPARENT,
+                    dashPattern: 255,
                   }),
                 arcType: Cesium.ArcType.NONE
               },
               show: config.link.show,
-            })!
-            )
+            })
+            if (linkEntity) {
+              if (gndObj.type === 'station') {
+                stationLinkEntities.push(linkEntity)
+              } else {
+                ueLinkEntities.push(linkEntity)
+              }
+            }
           }
         }
       })
-    }
       
       //// Draw Ground Station
       //entities?.add({
@@ -322,6 +369,7 @@ onMounted(async () => {
     }
   })
 })
+
 
 //
 //modelFolder.add(toggles, 'connection').onChange((value: boolean) => {

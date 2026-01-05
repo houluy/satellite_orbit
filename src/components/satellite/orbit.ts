@@ -30,6 +30,7 @@ export function constellation(tles: string): Satellites{
       index = index + 3
     }
     const satrec = satellite.twoline2satrec(tle1, tle2)
+    console.log(satrec)
     const orbit = calcOrbit(satrec, satName)
     const sat: Satellite = {
       id: satrec.satnum,
@@ -41,7 +42,6 @@ export function constellation(tles: string): Satellites{
     }
     satellites[sat.name] = sat
   }
-  console.log(satellites)
   return satellites
 }
 
