@@ -12,12 +12,13 @@ import { useViewerStore } from './store/viewer'
 import { GUI } from 'lil-gui'
 import * as Cesium from 'cesium'
 import * as satellite from 'satellite.js'
-import { calcOrbit, constellation, geoOrbit, type SatelliteRec, calcElevation, eciToCartesian3 } from '@/components/satellite/orbit'
+import { calcOrbit, constellation, geoOrbit, calcElevation, eciToCartesian3 } from '@/components/satellite/orbit'
 import { onMounted, watch, ref } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
-import type { Satellite, Satellites, Orbit, GroundObject, Satellite2GroundLink, CommunicationCapability, CommunicationLink } from '@/model/satellite';
+import { type Satellite, type Satellites, type Orbit, type GroundObject, Satellite2GroundLink, type CommunicationCapability, type CommunicationLink } from '@/model/satellite';
 import DataPanel from '@/components/panel/DataPanel.vue'
 import DrawPanel from './components/panel/DrawPanel.vue'
+import { processLtesatCfg } from '@/components/data/processLtesat'
 
 const tooltipVisible = ref(false)
 const showDetail = ref(false)
@@ -25,12 +26,7 @@ const panel = ref<HTMLElement|null>(null)
 const tooltipHtml = ref("")
 const tooltipStyle = { left: '0px', top: '0px' }
 
-async function loadConfig() {
-  const url = import.meta.env.BASE_URL + "LTESAT/config/dump.ENB-gnb-imt2030-ntn.cfg"
-  const response = await fetch(url)
-  const cfg = await response.json()
-  return cfg
-}
+
 
 const gui = new GUI()
 
@@ -39,8 +35,8 @@ const config = {
     depthDetection: false
   },
   satellite: {
-    pointSize: 20,
-    pointColor: "#ECE4B7",
+    pointSize: 10,
+    pointColor: "#74D3AE",
     orbitSize: 1,
     orbitColor: "#EF3054",
     velocityLength: 5,
@@ -50,6 +46,11 @@ const config = {
     showOrbit: false,
     showVelocity: false,
     showSatellite: true,
+  },
+  link: {
+    show: false,
+    UELinkColor: "#B8336A",
+    GroundStationLinkColor: "#ABDAFC",
   }
 }
 
@@ -70,6 +71,7 @@ cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
 })
 const satFolder = gui.addFolder("satellite")
 const velocityFolder = satFolder.addFolder("velocity")
+const linkFolder = gui.addFolder("link")
 
 satFolder.add(config.satellite, "pointSize", 1, 50)
 satFolder.add(config.satellite, "orbitSize", 1, 50)
@@ -127,53 +129,19 @@ velocityFolder.add(config.satellite, "showVelocity").name("Show Velocity").onCha
   })
 })
 
+linkFolder.addColor(config.link, "UELinkColor").onChange((value: string) => {
+  
+})
+
+linkFolder.addColor(config.link, "GroundStationLinkColor").onChange((value: string) => {
+  
+})
+
 onMounted(async () => {
-  const cfg =  await loadConfig()
-  const ntnCfg = cfg.nr_cell_default.ntn
-  const groundPositionCart = new Cesium.Cartographic(
-    Cesium.Math.toRadians(ntnCfg.ground_position.longitude),
-    Cesium.Math.toRadians(ntnCfg.ground_position.latitude),
-    0
-  )
-  const groundPosition = Cesium.Cartographic.toCartesian(groundPositionCart)
-
-  const UEPositionCart = new Cesium.Cartographic(
-    Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.longitude),
-    Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.latitude),
-    0
-  )
-  const UEPosition = Cesium.Cartographic.toCartesian(UEPositionCart)
-
-  const groundStation: GroundObject = {
-    id: 'GS001',
-    name: 'Ground Station 001',
-    type: "station",
-    position: groundPosition,
-    positionCartographic: groundPositionCart,
-    commCap: {
-      eirp: 50,
-      gt: 30,
-    }
-  }
-
-  const UE: GroundObject = {
-    id: 'UE001',
-    name: 'UE 001',
-    type: "ue",
-    position: UEPosition,
-    positionCartographic: UEPositionCart,
-    commCap: {
-      eirp: 20,
-      gt: 20,
-    }
-  }
-
-  const tleFile = ntnCfg.tle_filename
-
-  const tleFileUrl = import.meta.env.BASE_URL + `LTESAT/tle/${tleFile}`
-  const response = await fetch(tleFileUrl)
-  const tleText = await response.text()
-
+  const { tleFilename, groundObjects } = await processLtesatCfg()
+  const tlePath = `LTESAT/tle/${tleFilename}`
+  const tleString = await fetch(tlePath).then((res) => res.text())
+  
   const viewerStore = useViewerStore()
   const links: Satellite2GroundLink[] = []
 
@@ -181,8 +149,7 @@ onMounted(async () => {
     if (newVal) {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
-
-      satellites = constellation(TLEString)
+      satellites = constellation(tleString)
       Object.entries(satellites).forEach(([satName, sat]) => {
         // Draw Orbit
         orbitsEntities.push(entities?.add({
@@ -198,9 +165,6 @@ onMounted(async () => {
         })!)
         // Draw Satellite Point (time-dynamic)
         let currentPosition = sat.position
-
-        // Generate links with gNB and UE
-
 
         const timeDynamicPosition = new Cesium.CallbackPositionProperty((time, result) => {
           // seconds since viewer clock start
@@ -220,7 +184,7 @@ onMounted(async () => {
           position: timeDynamicPosition,
           point: {
             pixelSize: new Cesium.CallbackProperty(() => config.satellite.pointSize, false),
-            color: Cesium.Color.fromCssColorString(config.satellite.pointColor).withAlpha(0.8),
+            color: Cesium.Color.fromCssColorString(config.satellite.pointColor).withAlpha(1),
           },
           show: config.satellite.showSatellite,
         })!)
@@ -236,8 +200,8 @@ onMounted(async () => {
               if (pv && pv.position && pv.velocity) {
                 const posEci = pv.position
                 const velEci = pv.velocity
-                const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(posEci.x, posEci.y, posEci.z), kmToMeter, new Cesium.Cartesian3())
-                const vel = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(velEci.x, velEci.y, velEci.z), kmToMeter, new Cesium.Cartesian3())
+                const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(posEci.x, posEci.y, posEci.z), 1000, new Cesium.Cartesian3())
+                const vel = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(velEci.x, velEci.y, velEci.z), 1000, new Cesium.Cartesian3())
                 const velScaled = Cesium.Cartesian3.multiplyByScalar(vel, config.satellite.velocityLength, new Cesium.Cartesian3())
                 const nextPos = Cesium.Cartesian3.add(pos, velScaled, new Cesium.Cartesian3())
                 return [pos, nextPos]
@@ -250,32 +214,6 @@ onMounted(async () => {
           },
           show: config.satellite.showVelocity,
         })!)
-
-        // Draw connection between satellite and ground station
-        connectionEntities.push(entities?.add({
-          name: `${satName}_connection`,
-          polyline: {
-            positions: new Cesium.CallbackProperty((time, result) => {
-              const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
-              const minutesSinceStart = secondsSinceStart / 60
-              const pv = satellite.sgp4(satrec, minutesSinceStart)
-              if (pv && pv.position) {
-                const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(pv.position.x, pv.position.y, pv.position.z), kmToMeter, new Cesium.Cartesian3())
-                return [pos, groundPosition]
-              }
-              return [currentPosition, groundPosition]
-            }, false),
-            width: 2,
-            material: new Cesium.PolylineDashMaterialProperty({
-                  color: Cesium.Color.YELLOW,
-                  dashLength: 16,
-                  gapColor: Cesium.Color.TRANSPARENT,
-                  dashPattern: 255,
-              }),
-            arcType: Cesium.ArcType.NONE
-          },
-        })!
-        )
       })
       // Draw GEO
       const geoPositions = geoOrbit(0)
@@ -288,25 +226,72 @@ onMounted(async () => {
         }
       })
 
-      // Draw Ground Station
-      entities?.add({
-        name: `GroundStation`,
-        position: groundPosition,
-        point: {
-          pixelSize: 20,
-          color: Cesium.Color.RED,
-        }
-      })
+      for (const gndObj of groundObjects) {
+        entities?.add({
+          name: gndObj.name,
+          position: gndObj.position,
+          point: {
+            pixelSize: 20,
+            color: Cesium.Color.RED,
+          }
+        })
+      }
 
-      // Draw UE
-      entities?.add({
-        name: `UE`,
-        position: UEPosition,
-        point: {
-          pixelSize: 20,
-          color: Cesium.Color.BLUE,
+      Object.keys(satellites).forEach((satName) => {
+        const sat = satellites[satName]
+        if (sat) {
+          for (const gndObj of groundObjects) {
+            const link = new Satellite2GroundLink(sat, gndObj)
+            // Draw connection between satellite and ground station
+            connectionEntities.push(entities?.add({
+              name: `${satName}_connection`,
+              polyline: {
+                positions: new Cesium.CallbackProperty((time, result) => {
+                  const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+                  const minutesSinceStart = secondsSinceStart / 60
+                  const pv = satellite.sgp4(sat!.satrec, minutesSinceStart)
+                  if (pv && pv.position) {
+                    const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(pv.position.x, pv.position.y, pv.position.z), 1000, new Cesium.Cartesian3())
+                    return [pos, gndObj.position]
+                  }
+                  return [sat?.position, gndObj.position]
+                }, false),
+                width: 2,
+                material: new Cesium.PolylineDashMaterialProperty({
+                      color: Cesium.Color.fromCssColorString((gndObj.type === 'station')? config.link.GroundStationLinkColor : config.link.UELinkColor),
+                      dashLength: 16,
+                      gapColor: Cesium.Color.TRANSPARENT,
+                      dashPattern: 255,
+                  }),
+                arcType: Cesium.ArcType.NONE
+              },
+              show: config.link.show,
+            })!
+            )
+          }
         }
       })
+    }
+      
+      //// Draw Ground Station
+      //entities?.add({
+      //  name: `GroundStation`,
+      //  position: groundPosition,
+      //  point: {
+      //    pixelSize: 20,
+      //    color: Cesium.Color.RED,
+      //  }
+      //})
+
+      //// Draw UE
+      //entities?.add({
+      //  name: `UE`,
+      //  position: UEPosition,
+      //  point: {
+      //    pixelSize: 20,
+      //    color: Cesium.Color.BLUE,
+      //  }
+      //})
 
       // Draw Connection
 
