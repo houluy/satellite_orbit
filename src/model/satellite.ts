@@ -16,6 +16,7 @@ export type Orbit = {
   bstar: number
   positions: Cesium.Cartesian3[]
   velocities: Cesium.Cartesian3[]
+  entity?: Cesium.Entity
 }
 
 export type Satellite = {
@@ -25,6 +26,7 @@ export type Satellite = {
   orbit: Orbit
   position: Cesium.Cartesian3
   velocity: Cesium.Cartesian3
+  entity?: Cesium.Entity
 }
 
 export type Satellites = {
@@ -54,6 +56,7 @@ export type GroundObject = {
   position: Cesium.Cartesian3
   positionCartographic: Cesium.Cartographic
   commCap: CommunicationCapability
+  entity?: Cesium.Entity
 }
 
 export class Satellite2GroundLink {
@@ -65,6 +68,7 @@ export class Satellite2GroundLink {
   range: number
   transitionTime: number
   link: CommunicationLink
+  entity?: Cesium.Entity
 
   constructor(satellite: Satellite, groundObject: GroundObject) {
     this.satellite = satellite
