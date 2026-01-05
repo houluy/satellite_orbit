@@ -3,7 +3,6 @@
 //import { actions, storeDate } from '@/js/store/store'   //局部状态管理
 //import EventManager from '@/js/common/eventManager/EventManager.js'   //事件管理
 import { onBeforeUnmount } from 'vue'
-import { orbit } from '@/components/satellite/orbit'
 import { useViewerStore } from '@/store/viewer'
 //import createTooltip, { tooltip } from '@/js/tool/tooltip2'
 //import { useViewer } from "@/js/store"
@@ -34,7 +33,7 @@ async function initViewer(props: Props, callback?: () => void) {
         requestVertexNormals: true
     }),
     showRenderLoopErrors: false,
-    shouldAnimate: false,
+    shouldAnimate: true,
     selectionIndicator: false,
     timeline: false,
     baseLayerPicker: false,
