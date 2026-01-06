@@ -67,7 +67,7 @@ const ueLinkEntities: Cesium.Entity[] = []
 const stationLinkEntities: Cesium.Entity[] = []
 
 const groundStations: GroundObject[] = []
-const UEs: GroundObject[] = []
+const ues: GroundObject[] = []
 
 let satellites: Satellites = {}
 const cesiumFolder = gui.addFolder("cesium")
@@ -84,17 +84,25 @@ const ueFolder = gui.addFolder("ue")
 
 groundStationFolder.addColor(config.groundStation, "pointColor").onChange((value: string) => {
   groundStations.forEach((groundStation) => {
-    groundStation.point.color = Cesium.Color.fromCssColorString(value)
+    groundStation.entity.point.color = Cesium.Color.fromCssColorString(value)
   })
 
 })
 ueFolder.addColor(config.ue, "pointColor").onChange((value: string) => {
-  UEs.forEach((ue) => {
-    ue.point.color = Cesium.Color.fromCssColorString(value)
+  ues.forEach((ue) => {
+    ue.entity.point.color = Cesium.Color.fromCssColorString(value)
   })
 })
-groundStationFolder.add(config.groundStation, "pointSize", 1, 50)
-ueFolder.add(config.ue, "pointSize", 1, 50)
+groundStationFolder.add(config.groundStation, "pointSize", 1, 50).onChange((value: number) => {
+  groundStations.forEach((groundStation) => {
+    groundStation.entity.point.pixelSize = value
+  })
+})
+ueFolder.add(config.ue, "pointSize", 1, 50).onChange((value: number) => {
+  ues.forEach((ue) => {
+    ue.entity.point.pixelSize = value
+  })
+})
 
 satFolder.add(config.satellite, "pointSize", 1, 50)
 satFolder.add(config.satellite, "orbitSize", 1, 50)
@@ -277,6 +285,11 @@ onMounted(async () => {
           }
         })
         gndObj.entity = gndEntity
+        if (gndObj.type === "station") {
+          groundStations.push(gndObj)
+        } else {
+          ues.push(gndObj)
+        }
       }
 
       Object.keys(satellites).forEach((satName) => {

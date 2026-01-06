@@ -14,8 +14,12 @@ export async function processLtesatCfg(): Promise<{
   tleFilename: string
   groundObjects: GroundObject[]
 }> {
-  const gNBName = `dump.ENB-gnb-imt2030-ntn.cfg`
-  const cfg = await loadConfig(gNBName)
+  const gNBCfgName = `dump.ENB-gnb-imt2030-ntn.cfg`
+  const satCfgName = `dump.SAT-satellite-imt2030-leo.cfg`
+  const ueCfgName = `dump.UE0-ue-imt2030-ntn.cfg`
+  const cfg = await loadConfig(gNBCfgName)
+  const satCfg = await loadConfig(satCfgName)
+  const ueCfg = await loadConfig(ueCfgName)
   const ntnCfg = cfg.nr_cell_default.ntn
   const groundObjects: GroundObject[] = []
   const groundPositionCart = new Cesium.Cartographic(
@@ -25,16 +29,22 @@ export async function processLtesatCfg(): Promise<{
   )
   const groundPosition = Cesium.Cartographic.toCartesian(groundPositionCart)
 
-  const UEPositionCart = new Cesium.Cartographic(
+  const simUePositionCart = new Cesium.Cartographic(
     Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.longitude),
     Cesium.Math.toRadians(ntnCfg.channel_sim_control.ue_position.latitude),
     0
   )
-  const UEPosition = Cesium.Cartographic.toCartesian(UEPositionCart)
+  const realUePositionCart = new Cesium.Cartographic(
+    Cesium.Math.toRadians(ueCfg.cell_groups[0].ground_position.longitude),
+    Cesium.Math.toRadians(ueCfg.cell_groups[0].ground_position.latitude),
+    0
+  )
+  const simUePosition = Cesium.Cartographic.toCartesian(simUePositionCart)
+  const realUePosition = Cesium.Cartographic.toCartesian(realUePositionCart)
 
   const groundStation: GroundObject = {
-    id: 'GS001',
-    name: 'Ground Station 001',
+    id: 'GS',
+    name: 'Ground Station',
     type: "station",
     position: groundPosition,
     positionCartographic: groundPositionCart,
@@ -44,12 +54,24 @@ export async function processLtesatCfg(): Promise<{
     }
   }
 
-  const UE: GroundObject = {
-    id: 'UE001',
-    name: 'UE 001',
+  const simUe: GroundObject = {
+    id: 'SimUE0',
+    name: 'Simulated UE',
     type: "ue",
-    position: UEPosition,
-    positionCartographic: UEPositionCart,
+    position: simUePosition,
+    positionCartographic: simUePositionCart,
+    commCap: {
+      eirp: 20,
+      gt: 20,
+    }
+  }
+
+  const realUe: GroundObject = {
+    id: 'RealUE0',
+    name: 'Real UE',
+    type: "ue",
+    position: realUePosition,
+    positionCartographic: realUePositionCart,
     commCap: {
       eirp: 20,
       gt: 20,
@@ -57,7 +79,8 @@ export async function processLtesatCfg(): Promise<{
   }
 
   groundObjects.push(groundStation)
-  groundObjects.push(UE)
+  groundObjects.push(simUe)
+  groundObjects.push(realUe)
   const tleFilename = ntnCfg.tle_filename
   return {
     tleFilename,
