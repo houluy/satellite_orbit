@@ -57,6 +57,10 @@ const config = {
   ue: {
     pointSize: 10,
     pointColor: "#E1BC29",
+  },
+  cell: {
+    outlineColor: "#fafffe",
+    fillColor: "#fab0c3"
   }
 }
 
@@ -187,7 +191,7 @@ linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) 
 })
 
 onMounted(async () => {
-  const { tleFilename, groundObjects } = await processLtesatCfg()
+  const { tleFilename, groundObjects, cells } = await processLtesatCfg()
   const tlePath = `LTESAT/tle/${tleFilename}`
   const tleString = await fetch(tlePath).then((res) => res.text())
   
@@ -199,6 +203,24 @@ onMounted(async () => {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
       satellites = constellation(tleString)
+      // Draw cell
+      cells.forEach((cell) => {
+        const cellEntity = entities?.add({
+          name: cell.name,
+          position: cell.position,
+          ellipse: {
+            semiMinorAxis: cell.radius,
+            semiMajorAxis: cell.radius,
+            height: cell.positionCartographic.height,
+            material: Cesium.Color.fromCssColorString(config.cell.fillColor).withAlpha(0.3),
+            fill: true,
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString(config.cell.outlineColor),
+          },
+        })
+        cell.entity = cellEntity
+      })
+
       Object.entries(satellites).forEach(([satName, sat]) => {
         // Draw Orbit
         orbitsEntities.push(entities?.add({
