@@ -59,6 +59,16 @@ export type GroundObject = {
   entity?: Cesium.Entity
 }
 
+export type CellObject = {
+  id: string
+  name: string
+  type: "cell"
+  position: Cesium.Cartesian3
+  positionCartographic: Cesium.Cartographic
+  radius: number
+  entity?: Cesium.Entity
+}
+
 export class Satellite2GroundLink {
   satellite: Satellite
   groundObject: GroundObject
