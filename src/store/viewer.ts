@@ -1,24 +1,33 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as Cesium from "cesium"
+import type { CellObject, GroundObject, Satellite } from '@/model/satellite'
 
 export const useViewerStore = defineStore('viewer', () => {
-  const viewerReader = ref(false)
+  const viewerReady = ref(false)
   const viewer = ref<Cesium.Viewer | null>(null)
 
   function setViewer(v: Cesium.Viewer) {
     viewer.value = v
-    viewerReader.value = true
+    viewerReady.value = true
   }
 
   function destroyViewer() {
     if (viewer.value) {
       viewer.value.destroy()
       viewer.value = null
-      viewerReader.value = false
+      viewerReady.value = false
     }  
   }
 
-  return { viewerReader, viewer, setViewer, destroyViewer }
-  
+  return { viewerReady, viewer, setViewer, destroyViewer }
+})
+
+export const useEntitiesStore = defineStore('entities', () => {
+  const groundStations = ref<GroundObject[]>([])
+  const ues = ref<GroundObject[]>([])
+  const satellites = ref<Satellite[]>([])
+  const cells = ref<CellObject[]>([])
+
+  return { groundStations, ues, satellites, cells }
 })

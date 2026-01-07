@@ -2,18 +2,19 @@
   <Viewer />
   <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
   <DrawPanel v-model="showDetail" />
+  <DataPanel v-if="dataReady"></DataPanel>
 </template>
 
 <script lang="ts" setup>
 
 import Viewer from '@/components/viewer/viewer.vue'
 import Tooltip from '@/components/panel/Tooltip.vue'
-import { useViewerStore } from './store/viewer'
+import { useViewerStore, useEntitiesStore } from './store/viewer'
 import { GUI } from 'lil-gui'
 import * as Cesium from 'cesium'
 import * as satellite from 'satellite.js'
 import { calcOrbit, constellation, geoOrbit, calcElevation, eciToCartesian3 } from '@/components/satellite/orbit'
-import { onMounted, watch, ref } from 'vue'
+import { onMounted, watch, ref, toRefs } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
 import { type Satellite, type Satellites, type Orbit, type GroundObject, Satellite2GroundLink, type CommunicationCapability, type CommunicationLink } from '@/model/satellite';
 import DataPanel from '@/components/panel/DataPanel.vue'
@@ -25,8 +26,10 @@ const showDetail = ref(false)
 const panel = ref<HTMLElement|null>(null)
 const tooltipHtml = ref("")
 const tooltipStyle = { left: '0px', top: '0px' }
+const dataReady = ref(false)
 
 const gui = new GUI()
+const allEntities = useEntitiesStore()
 
 const config = {
   cesium: {
@@ -70,10 +73,6 @@ const velocityEntities: Cesium.Entity[] = []
 const ueLinkEntities: Cesium.Entity[] = []
 const stationLinkEntities: Cesium.Entity[] = []
 
-const groundStations: GroundObject[] = []
-const ues: GroundObject[] = []
-
-let satellites: Satellites = {}
 const cesiumFolder = gui.addFolder("cesium")
 cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
   const viewerStore = useViewerStore()
@@ -87,23 +86,22 @@ const groundStationFolder = gui.addFolder("groundStation")
 const ueFolder = gui.addFolder("ue")
 
 groundStationFolder.addColor(config.groundStation, "pointColor").onChange((value: string) => {
-  groundStations.forEach((groundStation) => {
+  allEntities.groundStations.forEach((groundStation) => {
     groundStation.entity.point.color = Cesium.Color.fromCssColorString(value)
   })
-
 })
 ueFolder.addColor(config.ue, "pointColor").onChange((value: string) => {
-  ues.forEach((ue) => {
+  allEntities.ues.forEach((ue) => {
     ue.entity.point.color = Cesium.Color.fromCssColorString(value)
   })
 })
 groundStationFolder.add(config.groundStation, "pointSize", 1, 50).onChange((value: number) => {
-  groundStations.forEach((groundStation) => {
+  allEntities.groundStations.forEach((groundStation) => {
     groundStation.entity.point.pixelSize = value
   })
 })
 ueFolder.add(config.ue, "pointSize", 1, 50).onChange((value: number) => {
-  ues.forEach((ue) => {
+  allEntities.ues.forEach((ue) => {
     ue.entity.point.pixelSize = value
   })
 })
@@ -191,20 +189,20 @@ linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) 
 })
 
 onMounted(async () => {
-  const { tleFilename, groundObjects, cells } = await processLtesatCfg()
+  const { tleFilename, groundObjects, cellObjects } = await processLtesatCfg()
   const tlePath = `LTESAT/tle/${tleFilename}`
   const tleString = await fetch(tlePath).then((res) => res.text())
   
   const viewerStore = useViewerStore()
   const links: Satellite2GroundLink[] = []
 
-  watch(() => viewerStore.viewerReader, (newVal: boolean) => {
+  watch(() => viewerStore.viewerReady, (newVal: boolean) => {
     if (newVal) {
       const viewer = viewerStore.viewer
       const entities = viewer?.entities
-      satellites = constellation(tleString)
+      allEntities.satellites = constellation(tleString)
       // Draw cell
-      cells.forEach((cell) => {
+      cellObjects.forEach((cell) => {
         const cellEntity = entities?.add({
           name: cell.name,
           position: cell.position,
@@ -219,12 +217,13 @@ onMounted(async () => {
           },
         })
         cell.entity = cellEntity
+        cell.id = cellEntity!.id
       })
 
-      Object.entries(satellites).forEach(([satName, sat]) => {
+      allEntities.satellites.forEach((sat: Satellite) => {
         // Draw Orbit
         orbitsEntities.push(entities?.add({
-          name: `${satName}_orbit`,
+          name: `${sat.name}_orbit`,
           polyline: {
             positions: sat.orbit.positions,
             width: new Cesium.CallbackProperty(() => {
@@ -245,24 +244,26 @@ onMounted(async () => {
           //elevation = calcElevation(satrec, groundPositionCart, new Date(time.toString()))
           const positionEci = pv?.position
           if (positionEci) {
-            eciToCartesian3([positionEci])[0]
+            currentPosition = eciToCartesian3([positionEci])[0]
           }
           return currentPosition
         }, false)
 
-        satelliteEntities.push(entities?.add({
-          name: satName,
+        const satEntity = entities?.add({
+          name: sat.name,
           position: timeDynamicPosition,
           point: {
             pixelSize: new Cesium.CallbackProperty(() => config.satellite.pointSize, false),
             color: Cesium.Color.fromCssColorString(config.satellite.pointColor).withAlpha(1),
           },
           show: config.satellite.showSatellite,
-        })!)
+        })!
+        sat.entity = satEntity
+        sat.id = satEntity!.id
 
         // Draw Velocity Arrow - compute current position & next position from velocity at given time
         velocityEntities.push(entities?.add({
-          name: `${satName}_velocity`,
+          name: `${sat.name}_velocity`,
           polyline: {
             positions: new Cesium.CallbackProperty((time, result) => {
               const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
@@ -307,49 +308,47 @@ onMounted(async () => {
           }
         })
         gndObj.entity = gndEntity
+        gndObj.id = gndEntity!.id
         if (gndObj.type === "station") {
-          groundStations.push(gndObj)
+          allEntities.groundStations.push(gndObj)
         } else {
-          ues.push(gndObj)
+          allEntities.ues.push(gndObj)
         }
       }
 
-      Object.keys(satellites).forEach((satName) => {
-        const sat = satellites[satName]
-        if (sat) {
-          for (const gndObj of groundObjects) {
-            const link = new Satellite2GroundLink(sat, gndObj)
-            // Draw connection between satellite and ground station
-            const linkEntity = entities?.add({
-              name: `${satName}-${gndObj.name}_link`,
-              polyline: {
-                positions: new Cesium.CallbackProperty((time, result) => {
-                  const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
-                  const minutesSinceStart = secondsSinceStart / 60
-                  const pv = satellite.sgp4(sat!.satrec, minutesSinceStart)
-                  if (pv && pv.position) {
-                    const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(pv.position.x, pv.position.y, pv.position.z), 1000, new Cesium.Cartesian3())
-                    return [pos, gndObj.position]
-                  }
-                  return [sat?.position, gndObj.position]
-                }, false),
-                width: 2,
-                material: new Cesium.PolylineDashMaterialProperty({
-                    color: Cesium.Color.fromCssColorString((gndObj.type === 'station')? config.link.GroundStationLinkColor : config.link.UELinkColor),
-                    dashLength: 16,
-                    gapColor: Cesium.Color.TRANSPARENT,
-                    dashPattern: 255,
-                  }),
-                arcType: Cesium.ArcType.NONE
-              },
-              show: config.link.show,
-            })
-            if (linkEntity) {
-              if (gndObj.type === 'station') {
-                stationLinkEntities.push(linkEntity)
-              } else {
-                ueLinkEntities.push(linkEntity)
-              }
+      allEntities.satellites.forEach((sat: Satellite) => {
+        for (const gndObj of groundObjects) {
+          const link = new Satellite2GroundLink(sat, gndObj)
+          // Draw connection between satellite and ground station
+          const linkEntity = entities?.add({
+            name: `${sat.name}-${gndObj.name}_link`,
+            polyline: {
+              positions: new Cesium.CallbackProperty((time, result) => {
+                const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+                const minutesSinceStart = secondsSinceStart / 60
+                const pv = satellite.sgp4(sat!.satrec, minutesSinceStart)
+                if (pv && pv.position) {
+                  const pos = Cesium.Cartesian3.multiplyByScalar(new Cesium.Cartesian3(pv.position.x, pv.position.y, pv.position.z), 1000, new Cesium.Cartesian3())
+                  return [pos, gndObj.position]
+                }
+                return [sat?.position, gndObj.position]
+              }, false),
+              width: 2,
+              material: new Cesium.PolylineDashMaterialProperty({
+                  color: Cesium.Color.fromCssColorString((gndObj.type === 'station')? config.link.GroundStationLinkColor : config.link.UELinkColor),
+                  dashLength: 16,
+                  gapColor: Cesium.Color.TRANSPARENT,
+                  dashPattern: 255,
+                }),
+              arcType: Cesium.ArcType.NONE
+            },
+            show: config.link.show,
+          })
+          if (linkEntity) {
+            if (gndObj.type === 'station') {
+              stationLinkEntities.push(linkEntity)
+            } else {
+              ueLinkEntities.push(linkEntity)
             }
           }
         }
@@ -401,36 +400,11 @@ onMounted(async () => {
           tooltipVisible.value = false
         }
       }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+      dataReady.value = true
     }
   })
 })
 
-
-//
-//modelFolder.add(toggles, 'connection').onChange((value: boolean) => {
-//  if (value) {
-//    entities.satellites.forEach((satelliteEntity: Cesium.Entity, index: number) => {
-//      const connection = viewer.entities.add({
-//        polyline: {
-//          positions: new Cesium.CallbackProperty(() => {
-//            return connectionPositionArray[index]
-//          }, false),
-//          width: 10,
-//          material: new Cesium.PolylineGlowMaterialProperty({
-//            glowPower: 0.2,
-//            color: Cesium.Color.fromCssColorString('#FF0000')
-//          }),
-//          arcType: Cesium.ArcType.NONE
-//        }
-//      })
-//      entities.connections.push(connection)
-//    })
-//  } else {
-//    entities.connections.forEach((connection) => {
-//      viewer.entities.remove(connection)
-//    })
-//  }
-//})
 </script>
 
 <style scoped>
