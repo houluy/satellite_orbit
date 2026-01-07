@@ -33,7 +33,7 @@ async function initViewer(props: Props, callback?: () => void) {
         requestVertexNormals: true
     }),
     showRenderLoopErrors: false,
-    shouldAnimate: false,
+    shouldAnimate: true,
     selectionIndicator: false,
     timeline: false,
     baseLayerPicker: false,

@@ -77,36 +77,51 @@ export class Satellite2GroundLink {
   elevation: number
   range: number
   transitionTime: number
+  frequency: number
   link: CommunicationLink
   entity?: Cesium.Entity
 
-  constructor(satellite: Satellite, groundObject: GroundObject) {
-    this.satellite = satellite
+  constructor(sat: Satellite, groundObject: GroundObject, frequency?: number) {
+    this.satellite = sat
     this.groundObject = groundObject
-    this.distance = Cesium.Cartesian3.distance(satellite.position, groundObject.position)
-    this.azimuth = this.calcAzimuth(satellite, groundObject)
-    this.elevation = this.calcElevation(satellite, groundObject)
-    this.elevation = Cesium.Math.toDegrees(Cesium.Cartesian3.angleBetween(satellite.position, groundObject.position))
-    this.range = Cesium.Cartesian3.distance(satellite.position, groundObject.position)
+    const observer = {
+      longtitude: this.groundObject.positionCartographic.longitude,
+      latitude: this.groundObject.positionCartographic.latitude,
+      height: this.groundObject.positionCartographic.height
+    }
+    const gmst = satellite.gstime(new Date())
+    this.distance = Cesium.Cartesian3.distance(sat.position, groundObject.position)
+    this.azimuth = this.calcAzimuth(sat, groundObject)
+    this.elevation = this.calcElevation(sat, groundObject)
+    this.elevation = Cesium.Math.toDegrees(Cesium.Cartesian3.angleBetween(sat.position, groundObject.position))
+    this.range = Cesium.Cartesian3.distance(sat.position, groundObject.position)
     this.transitionTime = 0
+    if (frequency) {
+      this.frequency = frequency
+    } else {
+      this.frequency = 6e9  // 6 GHz
+    }
     this.link = {
       connected: false
     }
   }
 
-  calcAzimuth(satellite: Satellite, groundObject: GroundObject): number {
+  calcAzimuth(satellite: Satellite = this.satellite, groundObject: GroundObject = this.groundObject): number {
     return 0
   }
 
-  calcElevation(satellite: Satellite, groundObject: GroundObject): number {
+  calcElevation(satellite: Satellite = this.satellite, groundObject: GroundObject = this.groundObject): number {
     return 0
   }
 
-  calcFSPL(airLoss: number = 0): number {
+  calcFSPL(satellite: Satellite = this.satellite, groundObject: GroundObject = this.groundObject): number {
   // Air loss includes the total losses of the free space path loss and atmospheric loss
   // @return: FSPL in dB
+    const d = Cesium.Cartesian3.distance(satellite.position, groundObject.position) // meters
+    const f = this.frequency  // Hz
 
-    return 0
+    const fspl = 20 * Math.log10(d) + 20 * Math.log10(f) + 20 * Math.log10(4 * Math.PI / 3e8)  // dB
+    return fspl
   }
 
   update(satellite: Satellite) {
