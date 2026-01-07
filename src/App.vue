@@ -36,7 +36,7 @@ const config = {
     depthDetection: false
   },
   satellite: {
-    pointSize: 10,
+    pointSize: 2,
     pointColor: "#74D3AE",
     orbitSize: 1,
     orbitColor: "#EF3054",
@@ -318,6 +318,7 @@ onMounted(async () => {
 
       allEntities.satellites.forEach((sat: Satellite) => {
         for (const gndObj of groundObjects) {
+          //console.log(sat, gndObj)
           const link = new Satellite2GroundLink(sat, gndObj)
           // Draw connection between satellite and ground station
           const linkEntity = entities?.add({
@@ -354,33 +355,13 @@ onMounted(async () => {
         }
       })
       
-      //// Draw Ground Station
-      //entities?.add({
-      //  name: `GroundStation`,
-      //  position: groundPosition,
-      //  point: {
-      //    pixelSize: 20,
-      //    color: Cesium.Color.RED,
-      //  }
-      //})
-
-      //// Draw UE
-      //entities?.add({
-      //  name: `UE`,
-      //  position: UEPosition,
-      //  point: {
-      //    pixelSize: 20,
-      //    color: Cesium.Color.BLUE,
-      //  }
-      //})
-
       // Draw Connection
 
       const handler = new Cesium.ScreenSpaceEventHandler(viewer!.scene.canvas)
       handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
         const pickedObject = viewer!.scene.pick(movement.position)
         if (Cesium.defined(pickedObject)) {
-          console.log('Picked object:', pickedObject)
+          //console.log('Picked object:', pickedObject)
           showDetail.value = true
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
