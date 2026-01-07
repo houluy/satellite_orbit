@@ -13,7 +13,7 @@ export async function loadConfig(name: string) {
 export async function processLtesatCfg(): Promise<{
   tleFilename: string
   groundObjects: GroundObject[]
-  cells: CellObject[]
+  cellObjects: CellObject[]
 }> {
   const gNBCfgName = `dump.ENB-gnb-imt2030-ntn.cfg`
   const satCfgName = `dump.SAT-sat-imt2030-leo.cfg`
@@ -24,7 +24,7 @@ export async function processLtesatCfg(): Promise<{
   const ntnCfg = cfg.nr_cell_default.ntn
   const satCellCfg = satCfg.cells_list[0]
   const groundObjects: GroundObject[] = []
-  const cells: CellObject[] = []
+  const cellObjects: CellObject[] = []
   const groundPositionCart = new Cesium.Cartographic(
     Cesium.Math.toRadians(ntnCfg.ground_position.longitude),
     Cesium.Math.toRadians(ntnCfg.ground_position.latitude),
@@ -100,11 +100,11 @@ export async function processLtesatCfg(): Promise<{
   groundObjects.push(groundStation)
   groundObjects.push(simUe)
   groundObjects.push(realUe)
-  cells.push(cell)
+  cellObjects.push(cell)
   const tleFilename = ntnCfg.tle_filename
   return {
     tleFilename,
     groundObjects,
-    cells,
+    cellObjects,
   }
 }

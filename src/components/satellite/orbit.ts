@@ -1,7 +1,7 @@
 import * as satellite from 'satellite.js'
 import * as Cesium from 'cesium'
 
-import type { Satellite, Satellites, Orbit, GroundObject } from '@/model/satellite'
+import type { Satellite, Orbit, GroundObject } from '@/model/satellite'
 
 export function eciToCartesian3(positionEci: satellite.EciVec3<number>[], factor: number = 1000): Cesium.Cartesian3[] {
   const positions: Cesium.Cartesian3[] = []
@@ -11,10 +11,10 @@ export function eciToCartesian3(positionEci: satellite.EciVec3<number>[], factor
   return positions
 }
 
-export function constellation(tles: string): Satellites{
+export function constellation(tles: string): Satellite[] {
   const tleLines = tles.split('\n').filter(line => line.trim().length > 0)
   let index = 0
-  const satellites: Satellites = {}
+  const satellites: Satellite[] = []
   while (index < tleLines.length) {
     let satName = tleLines[index]
     let tle1: string
@@ -30,7 +30,6 @@ export function constellation(tles: string): Satellites{
       index = index + 3
     }
     const satrec = satellite.twoline2satrec(tle1, tle2)
-    console.log(satrec)
     const orbit = calcOrbit(satrec, satName)
     const sat: Satellite = {
       id: satrec.satnum,
@@ -40,7 +39,7 @@ export function constellation(tles: string): Satellites{
       position: orbit.positions[0]!,
       velocity: orbit.velocities[0]!,
     }
-    satellites[sat.name] = sat
+    satellites.push(sat)
   }
   return satellites
 }
