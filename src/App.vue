@@ -38,6 +38,7 @@ const config = {
   satellite: {
     pointSize: 2,
     pointColor: "#74D3AE",
+    selectedColor: "#D7F171",
     orbitSize: 1,
     orbitColor: "#EF3054",
     velocityLength: 5,
@@ -215,6 +216,9 @@ onMounted(async () => {
             outline: true,
             outlineColor: Cesium.Color.fromCssColorString(config.cell.outlineColor),
           },
+          properties: {
+            type: "cell"
+          }
         })
         cell.entity = cellEntity
         cell.id = cellEntity!.id
@@ -232,6 +236,9 @@ onMounted(async () => {
             material: Cesium.Color.fromCssColorString(config.satellite.orbitColor),
           },
           show: config.satellite.showOrbit,
+          properties: {
+            type: "orbit"
+          }
         })!)
         // Draw Satellite Point (time-dynamic)
         let currentPosition = sat.position
@@ -257,6 +264,9 @@ onMounted(async () => {
             color: Cesium.Color.fromCssColorString(config.satellite.pointColor).withAlpha(1),
           },
           show: config.satellite.showSatellite,
+          properties: {
+            type: "satellite"
+          }
         })!
         sat.entity = satEntity
         sat.id = satEntity!.id
@@ -285,6 +295,9 @@ onMounted(async () => {
             material: new Cesium.PolylineArrowMaterialProperty(Cesium.Color.fromCssColorString(config.satellite.velocityColor)),
           },
           show: config.satellite.showVelocity,
+          properties: {
+            type: "velocity"
+          }
         })!)
       })
       // Draw GEO
@@ -305,6 +318,9 @@ onMounted(async () => {
           point: {
             pixelSize: 20,
             color: Cesium.Color.fromCssColorString((gndObj.type === "station") ? config.groundStation.pointColor : config.ue.pointColor),
+          },
+          properties: {
+            type: gndObj.type
           }
         })
         gndObj.entity = gndEntity
@@ -344,6 +360,9 @@ onMounted(async () => {
               arcType: Cesium.ArcType.NONE
             },
             show: config.link.show,
+            properties: {
+              type: "link"
+            }
           })
           if (linkEntity) {
             if (gndObj.type === 'station') {
@@ -363,6 +382,10 @@ onMounted(async () => {
         if (Cesium.defined(pickedObject)) {
           //console.log('Picked object:', pickedObject)
           showDetail.value = true
+          if (pickedObject.id.properties.type === "satellite") {
+            console.log("yes")
+            pickedObject.id.color = Cesium.Color.fromCssColorString(config.satellite.selectedColor)
+          }
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
