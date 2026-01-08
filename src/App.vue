@@ -36,7 +36,7 @@ const config = {
     depthDetection: false
   },
   satellite: {
-    pointSize: 2,
+    pointSize: 10,
     pointColor: "#74D3AE",
     selectedColor: "#D7F171",
     orbitSize: 1,
@@ -53,18 +53,22 @@ const config = {
     show: true,
     UELinkColor: "#B8336A",
     GroundStationLinkColor: "#ABDAFC",
+    selectedColor: "#F8F7F9"
   },
   groundStation: {
     pointSize: 10,
     pointColor: "#3BB273",
+    selectedColor: "#FF66D8"
   },
   ue: {
     pointSize: 10,
     pointColor: "#E1BC29",
+    selectedColor: "#D7D9D7",
   },
   cell: {
     outlineColor: "#fafffe",
-    fillColor: "#fab0c3"
+    fillColor: "#fab0c3",
+    selectedColor: "#DECDF5"
   }
 }
 
@@ -73,6 +77,12 @@ const satelliteEntities: Cesium.Entity[] = []
 const velocityEntities: Cesium.Entity[] = []
 const ueLinkEntities: Cesium.Entity[] = []
 const stationLinkEntities: Cesium.Entity[] = []
+const pickedSatelliteIds = ref<string[]>([])
+const pickedOrbitIds = ref<string[]>([])
+const pickedGroundStationIds = ref<string[]>([])
+const pickedUeIds = ref<string[]>([])
+const pickedCellIds = ref<string[]>([])
+
 
 const cesiumFolder = gui.addFolder("cesium")
 cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
@@ -186,7 +196,12 @@ linkFolder.addColor(config.link, "GroundStationLinkColor").onChange((value: stri
 })
 
 linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) => {
-  
+  ueLinkEntities.forEach((entity) => {
+    entity.show = value
+  })
+  stationLinkEntities.forEach((entity) => {
+    entity.show = value
+  })
 })
 
 onMounted(async () => {
@@ -382,9 +397,13 @@ onMounted(async () => {
         if (Cesium.defined(pickedObject)) {
           //console.log('Picked object:', pickedObject)
           showDetail.value = true
-          if (pickedObject.id.properties.type === "satellite") {
-            console.log("yes")
-            pickedObject.id.color = Cesium.Color.fromCssColorString(config.satellite.selectedColor)
+          if (pickedObject.id.properties.type.getValue() === "satellite") {
+            if (pickedSatelliteIds.value.includes(pickedObject.id.id)) {
+              pickedObject.id.point.color = Cesium.Color.fromCssColorString(config.satellite.pointColor)
+            } else {
+              pickedSatelliteIds.value.push(pickedObject.id.id)
+              pickedObject.id.point.color = Cesium.Color.fromCssColorString(config.satellite.selectedColor)
+            }
           }
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
