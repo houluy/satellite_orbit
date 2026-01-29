@@ -2,12 +2,12 @@ import * as Cesium from 'cesium'
 import type { GroundObject, CellObject } from '@/model/satellite'
 
 
-export async function loadConfig(name: string) {
-  const url = import.meta.env.BASE_URL + `LTESAT/config/${name}`
-  const response = await fetch(url)
-  const cfg = await response.json()
-  return cfg
-}
+  export async function loadConfig(name: string) {
+    const url = import.meta.env.BASE_URL + `LTESAT/config/${name}`
+    const response = await fetch(url)
+    const cfg = await response.json()
+    return cfg
+  }
 
 
 export async function processLtesatCfg(): Promise<{

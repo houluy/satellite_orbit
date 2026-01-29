@@ -1,12 +1,12 @@
 <template>
-  <Viewer />
-  <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
-  <DrawPanel v-model="showDetail" />
-  <DataPanel v-if="dataReady"></DataPanel>
+  <Viewer />
+  <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
+  //<DrawPanel v-model="showDetail" />
+  //<DataPanel v-if="dataReady"></DataPanel>
+  <LinkBudgetDisplay />
 </template>
 
 <script lang="ts" setup>
-
 import Viewer from '@/components/viewer/viewer.vue'
 import Tooltip from '@/components/panel/Tooltip.vue'
 import { useViewerStore, useEntitiesStore } from './store/viewer'
@@ -17,9 +17,10 @@ import { calcOrbit, constellation, geoOrbit, calcElevation, eciToCartesian3 } fr
 import { onMounted, watch, ref, toRefs } from 'vue'
 import { TLEString, singleTLE } from './data/tle';
 import { type Satellite, type Satellites, type Orbit, type GroundObject, Satellite2GroundLink, type CommunicationCapability, type CommunicationLink } from '@/model/satellite';
-import DataPanel from '@/components/panel/DataPanel.vue'
-import DrawPanel from './components/panel/DrawPanel.vue'
+//import DataPanel from '@/components/panel/DataPanel.vue'
+//import DrawPanel from './components/panel/DrawPanel.vue'
 import { processLtesatCfg } from '@/components/data/processLtesat'
+import LinkBudgetDisplay from '@/components/panel/LinkBudgetDisplay.vue'
 
 const tooltipVisible = ref(false)
 const showDetail = ref(false)
@@ -86,113 +87,248 @@ const pickedCellIds = ref<string[]>([])
 
 const cesiumFolder = gui.addFolder("cesium")
 cesiumFolder.add(config.cesium, "depthDetection").onChange((value: boolean) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  viewer!.scene.globe.depthTestAgainstTerrain = value
+  const viewerStore = useViewerStore()
+  const viewer = viewerStore.viewer
+  if(!viewer) return;
+  viewer!.scene.globe.depthTestAgainstTerrain = value
 })
+
 const satFolder = gui.addFolder("satellite")
 const velocityFolder = satFolder.addFolder("velocity")
+const orbitFolder = satFolder.addFolder("Orbit") 
+const pointFolder = satFolder.addFolder("Point") 
 const linkFolder = gui.addFolder("link")
 const groundStationFolder = gui.addFolder("groundStation")
 const ueFolder = gui.addFolder("ue")
 
 groundStationFolder.addColor(config.groundStation, "pointColor").onChange((value: string) => {
-  allEntities.groundStations.forEach((groundStation) => {
-    groundStation.entity.point.color = Cesium.Color.fromCssColorString(value)
-  })
+  
+  allEntities.groundStations.forEach((groundStation) => {
+    groundStation.entity.point.color = Cesium.Color.fromCssColorString(value)
+  })
 })
 ueFolder.addColor(config.ue, "pointColor").onChange((value: string) => {
-  allEntities.ues.forEach((ue) => {
-    ue.entity.point.color = Cesium.Color.fromCssColorString(value)
-  })
+  allEntities.ues.forEach((ue) => {
+    ue.entity.point.color = Cesium.Color.fromCssColorString(value)
+  })
 })
 groundStationFolder.add(config.groundStation, "pointSize", 1, 50).onChange((value: number) => {
-  allEntities.groundStations.forEach((groundStation) => {
-    groundStation.entity.point.pixelSize = value
-  })
+  allEntities.groundStations.forEach((groundStation) => {
+    groundStation.entity.point.pixelSize = value
+  })
 })
 ueFolder.add(config.ue, "pointSize", 1, 50).onChange((value: number) => {
-  allEntities.ues.forEach((ue) => {
-    ue.entity.point.pixelSize = value
-  })
+  allEntities.ues.forEach((ue) => {
+    ue.entity.point.pixelSize = value
+  })
 })
 
-satFolder.add(config.satellite, "pointSize", 1, 50)
-satFolder.add(config.satellite, "orbitSize", 1, 50)
-satFolder.add(config.satellite, "showOrbit").name("Show Orbit").onChange((value: boolean) => {
-  orbitsEntities.forEach((entity) => {
-    entity.show = value
-  })
+// 轨道显隐控制
+orbitFolder.add(config.satellite, "showOrbit").name("Show Orbit").onChange((value: boolean) => {
+  const viewerStore = useViewerStore() as any;
+  const viewer = viewerStore.viewer;
+  if(!viewer || viewer.isDestroyed()) return;
+  config.satellite.showOrbit = value;
+  let orbitPrimitive = null;
+  const primitives = viewer.scene.primitives;
+  for (let i = 0; i < primitives.length; i++) {
+    const primitive = primitives.get(i);
+    if (primitive && primitive.isOrbitCollection) {
+      orbitPrimitive = primitive;
+      break;
+    }
+  }
+  if (orbitPrimitive) {
+    orbitPrimitive.show = value;
+  } else if (value) {
+    viewerStore.renderSatelliteOrbits(
+      allEntities.satellites,
+      config.satellite.orbitColor,
+      config.satellite.orbitSize,
+      true
+    );
+  }
 })
-satFolder.add(config.satellite, "showSatellite").name("Show Satellite").onChange((value: boolean) => {
-  satelliteEntities.forEach((entity) => {
-    entity.show = value
-  })
+// 轨道大小控制
+orbitFolder.add(config.satellite, "orbitSize", 1, 50).name("Orbit Size").onChange((value: number) => {
+  config.satellite.orbitSize = value;
+  const viewerStore = useViewerStore();
+  if (!viewerStore.viewer || viewerStore.viewer.isDestroyed() || allEntities.satellites.length === 0) return;
+  
+  try {
+    orbitCollection.value = viewerStore.renderSatelliteOrbits(
+      allEntities.satellites,
+      config.satellite.orbitColor,
+      value
+    );
+    if (orbitCollection.value) {
+      orbitCollection.value.show = config.satellite.showOrbit;
+    }
+  } catch (e) {
+    console.warn('更新轨道大小异常:', e);
+  }
+});
+// 轨道颜色控制
+orbitFolder.addColor(config.satellite, "orbitColor").name("Orbit Color").onChange((value: string) => {
+  config.satellite.orbitColor = value;
+  const viewerStore = useViewerStore();
+  if (!viewerStore.viewer || viewerStore.viewer.isDestroyed() || allEntities.satellites.length === 0) return;
+  
+  try {
+    orbitCollection.value = viewerStore.renderSatelliteOrbits(
+      allEntities.satellites,
+      value,
+      config.satellite.orbitSize
+    );
+    if (orbitCollection.value) {
+      orbitCollection.value.show = config.satellite.showOrbit;
+    }
+  } catch (e) {
+    console.warn('更新轨道颜色异常:', e);
+  }
+});
+
+// 卫星点 running 勾选框
+pointFolder.add(config.satellite, "running").name("Running").onChange((value: boolean) => {
+  config.satellite.running = value;
+  const viewerStore = useViewerStore();
+  const entitiesStore = useEntitiesStore();
+  // 调用 store 的方法控制卫星运行/停止
+  if (viewerStore.viewer && entitiesStore.satellites.length > 0) {
+    viewerStore.setSatelliteRunning(value, entitiesStore.satellites);
+  }
 })
-satFolder.addColor(config.satellite, "orbitColor").onChange((value: string) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  const entities = viewer?.entities
-  entities?.values.forEach((entity) => {
-    if (entity.name?.endsWith('_orbit') && entity.polyline) {
-      entity.polyline.material = Cesium.Color.fromCssColorString(value)
-    }
-  })
+// 卫星点显隐控制
+pointFolder.add(config.satellite, "showSatellite").name("Show Satellite").onChange((value: boolean) => {
+  const viewerStore = useViewerStore()
+  if (viewerStore.satellitePrimitive) {
+    viewerStore.satellitePrimitive.show = value
+  }
 })
-satFolder.addColor(config.satellite, "pointColor").onChange((value: string) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  const entities = viewer?.entities
-  entities?.values.forEach((entity) => {
-    if (entity.point) {
-      entity.point.color = Cesium.Color.fromCssColorString(value)
-    }
-  })
+// 卫星点颜色控制
+pointFolder.addColor(config.satellite, "pointColor").name("Point Color").onChange((value: string) => {
+  const viewerStore = useViewerStore()
+  config.satellite.pointColor = value
+  if (viewerStore.viewer && allEntities.satellites.length > 0) {
+    viewerStore.renderSatellites(
+      allEntities.satellites,
+      value,
+      config.satellite.pointSize
+    )
+  }
 })
-satFolder.add( config.satellite, "running" ).onChange((value: boolean) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  viewer!.clockViewModel.shouldAnimate = value
-})
-velocityFolder.addColor(config.satellite, "velocityColor").onChange((value: string) => {
-  const viewerStore = useViewerStore()
-  const viewer = viewerStore.viewer
-  const entities = viewer?.entities
-  entities?.values.forEach((entity) => {
-    if (entity.name?.endsWith('_velocity') && entity.polyline) {
-      entity.polyline.material = new Cesium.PolylineArrowMaterialProperty(Cesium.Color.fromCssColorString(value))
-    }
-  })
+// 卫星点大小控制
+pointFolder.add(config.satellite, "pointSize", 1, 50).name("Point Size").onChange((value: number) => {
+  const viewerStore = useViewerStore()
+  config.satellite.pointSize = value
+  if (viewerStore.viewer && Array.isArray(allEntities.satellites) && allEntities.satellites.length > 0) {
+    viewerStore.renderSatellites(
+      allEntities.satellites,
+      config.satellite.pointColor,
+      value
+    );
+  }
 })
 
-velocityFolder.add(config.satellite, "velocityLength", 1, 100)
-velocityFolder.add(config.satellite, "velocitySize", 1, 100)
+// 速度箭头渲染
 velocityFolder.add(config.satellite, "showVelocity").name("Show Velocity").onChange((value: boolean) => {
-  velocityEntities.forEach((entity) => {
-    entity.show = value
-  })
+  const viewerStore = useViewerStore() as any;
+  const viewer = viewerStore.viewer;
+  if(!viewer || viewer.isDestroyed()) return;
+  config.satellite.showVelocity = value;
+
+  // 遍历Cesium原生Primitive集合，精准找到速度箭头实例
+  let velocityPrimitive = null;
+  const primitives = viewer.scene.primitives;
+  for (let i = 0; i < primitives.length; i++) {
+    const primitive = primitives.get(i);
+    if (primitive && primitive.isVelocityCollection) {
+      velocityPrimitive = primitive;
+      break;
+    }
+  }
+  if (velocityPrimitive) {
+    // 直接控制显隐，取消勾选立刻消失
+    velocityPrimitive.show = value;
+  } else if (value) {
+    // 未勾选不创建任何实例，彻底无残留
+    viewerStore.renderSatelliteVelocities(
+      allEntities.satellites,
+      config.satellite.velocityColor,
+      config.satellite.velocityLength,
+      config.satellite.velocitySize,
+      config.satellite.showVelocity,
+      true
+    );
+  }
+})
+// 修改速度箭头颜色控制
+velocityFolder.addColor(config.satellite, "velocityColor").onChange((value: string) => {
+  config.satellite.velocityColor = value
+  const viewerStore = useViewerStore()
+  if (viewerStore.viewer && allEntities.satellites.length > 0) {
+    velocityCollection.value = viewerStore.renderSatelliteVelocities(
+      allEntities.satellites,
+      value,
+      config.satellite.velocityLength,
+      config.satellite.velocitySize
+    )
+    if (velocityCollection.value) {
+      velocityCollection.value.show = config.satellite.showVelocity
+    }
+  }
+})
+velocityFolder.add(config.satellite, "velocityLength", 1, 100).onChange((value: number) => {
+  config.satellite.velocityLength = value
+  const viewerStore = useViewerStore()
+  if (viewerStore.viewer && allEntities.satellites.length > 0) {
+    velocityCollection.value = viewerStore.renderSatelliteVelocities(
+      allEntities.satellites,
+      config.satellite.velocityColor,
+      value,
+      config.satellite.velocitySize
+    )
+    if (velocityCollection.value) {
+      velocityCollection.value.show = config.satellite.showVelocity
+    }
+  }
+})
+velocityFolder.add(config.satellite, "velocitySize", 1, 100).onChange((value: number) => {
+  config.satellite.velocitySize = value
+  const viewerStore = useViewerStore()
+  if (viewerStore.viewer && allEntities.satellites.length > 0) {
+    velocityCollection.value = viewerStore.renderSatelliteVelocities(
+      allEntities.satellites,
+      config.satellite.velocityColor,
+      config.satellite.velocityLength,
+      value
+    )
+    if (velocityCollection.value) {
+      velocityCollection.value.show = config.satellite.showVelocity
+    }
+  }
 })
 
 linkFolder.addColor(config.link, "UELinkColor").onChange((value: string) => {
-  ueLinkEntities.forEach((entity) => {
-    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
-      color: Cesium.Color.fromCssColorString(value),
-      dashLength: 16,
-      gapColor: Cesium.Color.TRANSPARENT,
-      dashPattern: 255,
-    })
-  })
+  ueLinkEntities.forEach((entity) => {
+    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
+      color: Cesium.Color.fromCssColorString(value),
+      dashLength: 16,
+      gapColor: Cesium.Color.TRANSPARENT,
+      dashPattern: 255,
+    })
+  })
 })
 
 linkFolder.addColor(config.link, "GroundStationLinkColor").onChange((value: string) => {
-  stationLinkEntities.forEach((entity) => {
-    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
-      color: Cesium.Color.fromCssColorString(value),
-      dashLength: 16,
-      gapColor: Cesium.Color.TRANSPARENT,
-      dashPattern: 255,
-    })
-  }) 
+  stationLinkEntities.forEach((entity) => {
+    entity.polyline.material = new Cesium.PolylineDashMaterialProperty({
+      color: Cesium.Color.fromCssColorString(value),
+      dashLength: 16,
+      gapColor: Cesium.Color.TRANSPARENT,
+      dashPattern: 255,
+    })
+  }) 
 })
 
 linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) => {
@@ -205,12 +341,12 @@ linkFolder.add(config.link, "show").name("Show Link").onChange((value: boolean) 
 })
 
 onMounted(async () => {
-  const { tleFilename, groundObjects, cellObjects } = await processLtesatCfg()
-  const tlePath = `LTESAT/tle/${tleFilename}`
-  const tleString = await fetch(tlePath).then((res) => res.text())
-  
-  const viewerStore = useViewerStore()
-  const links: Satellite2GroundLink[] = []
+  const {  groundObjects, cellObjects } = await processLtesatCfg()
+  const tlePath = `/LTESAT/tle/modified-imt2030-2025.tle`
+  const tleString = await fetch(tlePath).then((res) => res.text())
+  
+  const viewerStore = useViewerStore()
+  const links: Satellite2GroundLink[] = []
 
   watch(() => viewerStore.viewerReady, (newVal: boolean) => {
     if (newVal) {
@@ -258,18 +394,16 @@ onMounted(async () => {
         // Draw Satellite Point (time-dynamic)
         let currentPosition = sat.position
 
-        const timeDynamicPosition = new Cesium.CallbackPositionProperty((time, result) => {
-          // seconds since viewer clock start
-          const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
-          const minutesSinceStart = secondsSinceStart / 60
-          const pv = satellite.sgp4(sat.satrec, minutesSinceStart)
-          //elevation = calcElevation(satrec, groundPositionCart, new Date(time.toString()))
-          const positionEci = pv?.position
-          if (positionEci) {
-            currentPosition = eciToCartesian3([positionEci])[0]
-          }
-          return currentPosition
-        }, false)
+        const timeDynamicPosition = new Cesium.CallbackPositionProperty((time, result) => {
+          const secondsSinceStart = Cesium.JulianDate.secondsDifference(time!, viewer!.clock.startTime)
+          const minutesSinceStart = secondsSinceStart / 60
+          const pv = satellite.sgp4(sat.satrec, minutesSinceStart)
+          const positionEci = pv?.position
+          if (positionEci) {
+            currentPosition = eciToCartesian3([positionEci])[0]
+          }
+          return currentPosition
+        }, false)
 
         const satEntity = entities?.add({
           name: sat.name,
@@ -408,34 +542,52 @@ onMounted(async () => {
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
-      const scratch = new Cesium.Cartesian2();
-      handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
-        const pickedObject = viewer!.scene.pick(movement.endPosition)
-        //const screenPosition = viewer!.scene.cartesianToCanvasCoordinates(movement.position, scratch)
-        //console.log(screenPosition)
-        if (Cesium.defined(pickedObject)) {
-          console.log('Picked object:', pickedObject)
-          tooltipVisible.value = true
-          tooltipStyle.left = `${movement.endPosition.x + 10}px`
-          tooltipStyle.top = `${movement.endPosition.y + 10}px`
-          tooltipHtml.value = `<strong>${pickedObject.id.name}</strong>`
-        } else {
-          tooltipVisible.value = false
-        }
-      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
-      dataReady.value = true
-    }
-  })
+      const scratch = new Cesium.Cartesian2();
+      handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
+        const pickedObject = viewer!.scene.pick(movement.endPosition)
+        console.log('Picked object:', pickedObject)
+        if (Cesium.defined(pickedObject)) {
+          tooltipVisible.value = true
+          tooltipStyle.left = `${movement.endPosition.x + 10}px`
+          tooltipStyle.top = `${movement.endPosition.y + 10}px`
+          // 兼容 Primitive 和 Entity 两种拾取
+          let pickName = "未知对象";
+          // 地面站/UE/小区还是Entity
+          if (pickedObject.id && pickedObject.id.name) {
+            pickName = pickedObject.id.name;
+          } 
+          // 在viewer.ts里给Primitive挂载了satelliteData
+          else if (pickedObject.primitive && pickedObject.primitive.satelliteData) {
+            pickName = pickedObject.primitive.satelliteData.name;
+          }
+          // 处理轨道 Primitive 拾取
+          else if (
+            pickedObject.primitive && 
+            (pickedObject.primitive as any).isOrbitCollection && 
+            pickedObject.id 
+          ) {
+           
+            const orbitInstanceId = pickedObject.id as string;
+            if (orbitInstanceId.startsWith('orbit_')) {
+              const satelliteId = orbitInstanceId.replace('orbit_', '');
+              pickName = `${satelliteId}_orbit`; 
+            }
+          }
+          tooltipHtml.value = `<strong>${pickName}</strong>`
+        } else {
+          tooltipVisible.value = false
+        }
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+      dataReady.value = true
+    }
+  })
 })
-
 </script>
 
 <style scoped>
 .panel {
   position: relative;
   z-index: 10;
-  size: small;
+  font-size: small;  
 }
-
 </style>
-
