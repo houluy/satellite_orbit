@@ -35,4 +35,10 @@ onMounted(async () => {
 </script>
 
 
+<style scoped>
+#cesiumContainer {
+  width: 30%;
+  height: 30%;
+}
+</style>
 

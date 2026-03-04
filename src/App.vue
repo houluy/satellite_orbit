@@ -1,8 +1,11 @@
 <template>
-  <Viewer />
-  <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
-  <DrawPanel v-model="showDetail" />
-  <DataPanel v-if="dataReady"></DataPanel>
+  <div id="bg">
+    <Viewer/>
+    <Tooltip :visible="tooltipVisible" :styleObject="tooltipStyle" :html="tooltipHtml" />
+    <!--<DrawPanel v-model="showDetail" />-->
+    <SatList :selectedSatelliteIds="pickedSatelliteIds"></SatList>
+    <!--<DataPanel v-if="dataReady"></DataPanel>-->
+  </div>
 </template>
 
 <script lang="ts" setup>
@@ -20,6 +23,7 @@ import { type Satellite, type Satellites, type Orbit, type GroundObject, Satelli
 import DataPanel from '@/components/panel/DataPanel.vue'
 import DrawPanel from './components/panel/DrawPanel.vue'
 import { processLtesatCfg } from '@/components/data/processLtesat'
+import SatList from './components/panel/SatList.vue'
 
 const tooltipVisible = ref(false)
 const showDetail = ref(false)
@@ -400,6 +404,7 @@ onMounted(async () => {
           if (pickedObject.id.properties.type.getValue() === "satellite") {
             if (pickedSatelliteIds.value.includes(pickedObject.id.id)) {
               pickedObject.id.point.color = Cesium.Color.fromCssColorString(config.satellite.pointColor)
+              pickedSatelliteIds.value = pickedSatelliteIds.value.filter(id => id !== pickedObject.id.id)
             } else {
               pickedSatelliteIds.value.push(pickedObject.id.id)
               pickedObject.id.point.color = Cesium.Color.fromCssColorString(config.satellite.selectedColor)
@@ -414,7 +419,7 @@ onMounted(async () => {
         //const screenPosition = viewer!.scene.cartesianToCanvasCoordinates(movement.position, scratch)
         //console.log(screenPosition)
         if (Cesium.defined(pickedObject)) {
-          console.log('Picked object:', pickedObject)
+          //console.log('Picked object:', pickedObject)
           tooltipVisible.value = true
           tooltipStyle.left = `${movement.endPosition.x + 10}px`
           tooltipStyle.top = `${movement.endPosition.y + 10}px`
@@ -435,6 +440,13 @@ onMounted(async () => {
   position: relative;
   z-index: 10;
   size: small;
+}
+
+#bg {
+  background-image: url(./assets/background.png);
+  width: 100%;
+  height: 100%;
+
 }
 
 </style>

@@ -1,14 +1,14 @@
 <template>
 
-<div v-for="(selectedSatelliteEntities, index) in selectedSatelliteIds" :key="index">
-  {{ selectedSatelliteEntities.name }}
+<div v-for="(selectedSatelliteEntity, index) in selectedSatelliteEntities" :key="index">
+  {{ selectedSatelliteEntity.name }}
 </div>
 
 </template>
 
 <script lang="ts" setup>
 
-import { onMounted, watch, ref } from 'vue';
+import { computed, onMounted, watch, ref } from 'vue';
 import { useViewerStore } from '@/store/viewer';
 import * as Cesium from "cesium"
 
@@ -18,21 +18,28 @@ const props = defineProps<{
   selectedSatelliteIds: string[]
 }>()
 
-const selectedSatelliteEntities = ref<Cesium.Entity[]>([])
+let selectedSatelliteEntities = ref<Cesium.Entity[]>([])
 
-onMounted(() => {
-  watch(() => viewerStore.viewerReady, (newVal: boolean) => {
-    if (newVal) {
-      const viewer = viewerStore.viewer
-      props.selectedSatelliteIds.forEach((satId: string) => {
-        const entity = viewer?.entities.getById(satId)
-        if (entity !== undefined) {
-          selectedSatelliteEntities.value.push(entity)
-        }
-      })
+watch(() => props.selectedSatelliteIds, (newVal: string[]) => {
+  selectedSatelliteEntities.value = []
+  console.log(newVal)
+  const viewer = viewerStore.viewer
+  newVal.forEach((satId: string) => {
+    const entity = viewer?.entities.getById(satId)
+    if (entity !== undefined) {
+      selectedSatelliteEntities.value.push(entity)
     }
   })
 })
+
+//onMounted(() => {
+  //watch(() => viewerStore.viewerReady, (newVal: boolean) => {
+  //  if (newVal) {
+  //    const viewer = viewerStore.viewer
+  //    
+  //  }
+  //})
+//})
 
 </script>
 
